@@ -8,16 +8,18 @@ import (
 )
 
 type Package struct {
-	Name        string   `json:"name"`
-	Version     string   `json:"version"`
-	Description string   `json:"description"`
-	Author      string   `json:"author"`
-	Size        int64    `json:"size"`
-	SHA256      string   `json:"sha256"`
-	Downloads   int64    `json:"downloads"`
-	CreatedAt   string   `json:"created_at"`
-	UpdatedAt   string   `json:"updated_at"`
-	Tags        []string `json:"tags"`
+	Name             string   `json:"name"`
+	Version          string   `json:"version"`
+	Description      string   `json:"description"`
+	Author           string   `json:"author"`
+	SourceRepository string   `json:"source_repository,omitempty"`
+	SourceIssues     string   `json:"source_issues,omitempty"`
+	Size             int64    `json:"size"`
+	SHA256           string   `json:"sha256"`
+	Downloads        int64    `json:"downloads"`
+	CreatedAt        string   `json:"created_at"`
+	UpdatedAt        string   `json:"updated_at"`
+	Tags             []string `json:"tags"`
 }
 
 type Store interface {
