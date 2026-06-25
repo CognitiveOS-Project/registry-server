@@ -7,6 +7,7 @@
 /vendor/
 /go/pkg/
 *.sum
+!go.sum
 go.work
 
 # Data
@@ -26,3 +27,4 @@ Thumbs.db
 
 # Editor backups
 * 2.*
+registry-server
