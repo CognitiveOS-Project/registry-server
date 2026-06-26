@@ -14,6 +14,7 @@ type Package struct {
 	Author      string   `json:"author"`
 	Size        int64    `json:"size"`
 	SHA256      string   `json:"sha256"`
+	DownloadURL string   `json:"download_url,omitempty"`
 	Downloads   int64    `json:"downloads"`
 	CreatedAt   string   `json:"created_at"`
 	UpdatedAt   string   `json:"updated_at"`
