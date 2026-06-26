@@ -17,7 +17,6 @@ import (
 
 func main() {
 	addr := flag.String("addr", ":8080", "listen address")
-	data := flag.String("data", "./data", "data directory")
 	flag.Parse()
 
 	memStore := store.NewMemoryStore()
@@ -27,7 +26,6 @@ func main() {
 
 	cfg := server.Config{
 		Addr:      *addr,
-		DataDir:   *data,
 		Store:     memStore,
 		TokenAuth: tokenStore,
 	}
@@ -40,7 +38,7 @@ func main() {
 	}
 
 	go func() {
-		log.Printf("Starting registry server on %s", *addr)
+		log.Printf("Starting registry notary on %s (proxy/redirect mode)", *addr)
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("server error: %v", err)
 		}
