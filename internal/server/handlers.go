@@ -1,12 +1,12 @@
 package server
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"log"
 	"net/http"
-	"os"
-	"strconv"
 	"strings"
 
 	"github.com/CognitiveOS-Project/registry-server/internal/store"
@@ -55,7 +55,7 @@ func (s *Server) handleDownload() http.HandlerFunc {
 		name := r.PathValue("name")
 		version := r.PathValue("version")
 
-		_, err := s.config.Store.Get(name, version)
+		pkg, err := s.config.Store.Get(name, version)
 		if err != nil {
 			if err == store.ErrNotFound {
 				writeJSON(w, http.StatusNotFound, map[string]string{"error": "package not found"})
@@ -65,23 +65,12 @@ func (s *Server) handleDownload() http.HandlerFunc {
 			return
 		}
 
-		cgpPath := s.cgpPath(name, version)
-		f, err := os.Open(cgpPath)
-		if err != nil {
-			if os.IsNotExist(err) {
-				writeJSON(w, http.StatusNotFound, map[string]string{"error": "package file not found"})
-				return
-			}
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		if pkg.DownloadURL == "" {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "no download URL registered for this package"})
 			return
 		}
-		defer f.Close()
 
-		stat, _ := f.Stat()
-		w.Header().Set("Content-Type", "application/octet-stream")
-		w.Header().Set("Content-Disposition", "attachment; filename="+name+"-"+version+".cgp")
-		w.Header().Set("Content-Length", strconv.FormatInt(stat.Size(), 10))
-		io.Copy(w, f)
+		http.Redirect(w, r, pkg.DownloadURL, http.StatusFound)
 	}
 }
 
@@ -100,6 +89,7 @@ func (s *Server) handlePublish() http.HandlerFunc {
 			version := r.FormValue("version")
 			description := r.FormValue("description")
 			author := r.FormValue("author")
+			downloadURL := r.FormValue("download_url")
 			tagsStr := r.FormValue("tags")
 
 			if name == "" || version == "" {
@@ -115,41 +105,24 @@ func (s *Server) handlePublish() http.HandlerFunc {
 				}
 			}
 
-			file, header, err := r.FormFile("file")
-			if err != nil {
-				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "file field required: " + err.Error()})
-				return
-			}
-			defer file.Close()
-
-			if err := os.MkdirAll(s.config.DataDir, 0755); err != nil {
-				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-				return
-			}
-
-			cgpPath := s.cgpPath(name, version)
-			dst, err := os.Create(cgpPath)
-			if err != nil {
-				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-				return
-			}
-			defer dst.Close()
-
-			size, err := io.Copy(dst, file)
-			if err != nil {
-				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-				return
-			}
-
 			pkg := store.Package{
 				Name:        name,
 				Version:     version,
 				Description: description,
 				Author:      author,
-				Size:        size,
-				SHA256:      "",
-				Downloads:   0,
+				DownloadURL: downloadURL,
 				Tags:        tags,
+			}
+
+			file, _, err := r.FormFile("file")
+			if err == nil {
+				defer file.Close()
+				hasher := sha256.New()
+				size, err := io.Copy(hasher, file)
+				if err == nil {
+					pkg.Size = size
+					pkg.SHA256 = hex.EncodeToString(hasher.Sum(nil))
+				}
 			}
 
 			if err := s.config.Store.Put(pkg); err != nil {
@@ -157,24 +130,18 @@ func (s *Server) handlePublish() http.HandlerFunc {
 				return
 			}
 
-			if _, err := s.config.Store.Get(name, version); err != nil {
-				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to store package metadata"})
-				return
-			}
-
-			if header != nil {
-				log.Printf("Published %s v%s (%d bytes)", name, version, size)
-			}
+			log.Printf("Notary: registered %s v%s (sha256=%s)", name, version, pkg.SHA256)
 			writeJSON(w, http.StatusCreated, pkg)
 			return
 		}
 
 		var req struct {
-			Name        string `json:"name"`
-			Version     string `json:"version"`
-			Description string `json:"description"`
-			Author      string `json:"author"`
-			DownloadURL string `json:"download_url"`
+			Name        string   `json:"name"`
+			Version     string   `json:"version"`
+			Description string   `json:"description"`
+			Author      string   `json:"author"`
+			DownloadURL string   `json:"download_url"`
+			SHA256      string   `json:"sha256"`
 			Tags        []string `json:"tags"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -192,23 +159,9 @@ func (s *Server) handlePublish() http.HandlerFunc {
 			Version:     req.Version,
 			Description: req.Description,
 			Author:      req.Author,
+			DownloadURL: req.DownloadURL,
+			SHA256:      req.SHA256,
 			Tags:        req.Tags,
-		}
-
-		if req.DownloadURL != "" {
-			if err := os.MkdirAll(s.config.DataDir, 0755); err != nil {
-				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-				return
-			}
-			cgpPath := s.cgpPath(req.Name, req.Version)
-			if err := downloadFile(cgpPath, req.DownloadURL); err != nil {
-				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "failed to download from URL: " + err.Error()})
-				return
-			}
-			stat, err := os.Stat(cgpPath)
-			if err == nil {
-				pkg.Size = stat.Size()
-			}
 		}
 
 		if err := s.config.Store.Put(pkg); err != nil {
@@ -216,6 +169,7 @@ func (s *Server) handlePublish() http.HandlerFunc {
 			return
 		}
 
+		log.Printf("Notary: registered %s v%s (sha256=%s)", req.Name, req.Version, pkg.SHA256)
 		writeJSON(w, http.StatusCreated, pkg)
 	}
 }
@@ -249,21 +203,3 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(v)
 }
-
-func downloadFile(path, url string) error {
-	resp, err := http.Get(url)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	out, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-
-	_, err = io.Copy(out, resp.Body)
-	return err
-}
-
