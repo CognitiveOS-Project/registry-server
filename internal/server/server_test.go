@@ -18,7 +18,7 @@ func setupTestServer(t *testing.T) (*Server, string) {
 
 	memStore := store.NewMemoryStore()
 	tokenAuth := auth.NewMemoryTokenStore()
-	tokenAuth.Add("test-token-123")
+	_ = tokenAuth.Add("test-token-123")
 
 	cfg := Config{
 		Addr:      ":0",
@@ -27,7 +27,7 @@ func setupTestServer(t *testing.T) (*Server, string) {
 		TokenAuth: tokenAuth,
 	}
 
-	memStore.Put(store.Package{
+	_ = memStore.Put(store.Package{
 		Name:        "test-patch",
 		Version:     "1.0.0",
 		Description: "A test cognitive patch",
@@ -52,7 +52,7 @@ func TestHealth(t *testing.T) {
 	}
 
 	var resp map[string]string
-	json.NewDecoder(w.Body).Decode(&resp)
+	_ = json.NewDecoder(w.Body).Decode(&resp)
 	if resp["status"] != "ok" {
 		t.Errorf("expected status ok, got %s", resp["status"])
 	}
@@ -69,7 +69,7 @@ func TestSearch(t *testing.T) {
 	}
 
 	var results []store.Package
-	json.NewDecoder(w.Body).Decode(&results)
+	_ = json.NewDecoder(w.Body).Decode(&results)
 	if len(results) == 0 {
 		t.Fatal("expected search results")
 	}
@@ -89,7 +89,7 @@ func TestSearchNoQuery(t *testing.T) {
 	}
 
 	var results []store.Package
-	json.NewDecoder(w.Body).Decode(&results)
+	_ = json.NewDecoder(w.Body).Decode(&results)
 	if len(results) == 0 {
 		t.Error("expected at least one result with empty query")
 	}
@@ -106,7 +106,7 @@ func TestGetPatch(t *testing.T) {
 	}
 
 	var pkg store.Package
-	json.NewDecoder(w.Body).Decode(&pkg)
+	_ = json.NewDecoder(w.Body).Decode(&pkg)
 	if pkg.Name != "test-patch" {
 		t.Errorf("expected test-patch, got %s", pkg.Name)
 	}
@@ -160,7 +160,7 @@ func TestDownloadNoURL(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
 	// Package no-download exists but has no DownloadURL
-	srv.config.Store.Put(store.Package{
+	_ = srv.config.Store.Put(store.Package{
 		Name:    "no-download",
 		Version: "1.0.0",
 	})
@@ -193,13 +193,13 @@ func TestPublishWithAuth(t *testing.T) {
 
 	var buf bytes.Buffer
 	mp := multipart.NewWriter(&buf)
-	mp.WriteField("name", "new-patch")
-	mp.WriteField("version", "0.1.0")
-	mp.WriteField("description", "brand new")
-	mp.WriteField("author", "tester")
+	_ = mp.WriteField("name", "new-patch")
+	_ = mp.WriteField("version", "0.1.0")
+	_ = mp.WriteField("description", "brand new")
+	_ = mp.WriteField("author", "tester")
 
 	fw, _ := mp.CreateFormFile("file", "patch.cgp")
-	fw.Write([]byte("cgp data here"))
+	_, _ = fw.Write([]byte("cgp data here"))
 	mp.Close()
 
 	w := httptest.NewRecorder()
@@ -213,7 +213,7 @@ func TestPublishWithAuth(t *testing.T) {
 	}
 
 	var pkg store.Package
-	json.NewDecoder(w.Body).Decode(&pkg)
+	_ = json.NewDecoder(w.Body).Decode(&pkg)
 	if pkg.Name != "new-patch" {
 		t.Errorf("expected new-patch, got %s", pkg.Name)
 	}
@@ -248,7 +248,7 @@ func TestPublishJSONWithDownloadURL(t *testing.T) {
 	}
 
 	var pkg store.Package
-	json.NewDecoder(w.Body).Decode(&pkg)
+	_ = json.NewDecoder(w.Body).Decode(&pkg)
 	if pkg.Name != "json-patch" {
 		t.Errorf("expected json-patch, got %s", pkg.Name)
 	}
@@ -275,7 +275,7 @@ func TestUnlock(t *testing.T) {
 	}
 
 	var resp map[string]interface{}
-	json.NewDecoder(w.Body).Decode(&resp)
+	_ = json.NewDecoder(w.Body).Decode(&resp)
 	if resp["status"] != "ok" {
 		t.Errorf("expected status ok, got %s", resp["status"])
 	}
