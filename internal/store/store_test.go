@@ -49,8 +49,8 @@ func TestGetNotFound(t *testing.T) {
 
 func TestSearchByName(t *testing.T) {
 	s := NewMemoryStore()
-	s.Put(Package{Name: "alpha-patch", Version: "1.0.0", Description: "first"})
-	s.Put(Package{Name: "beta-patch", Version: "1.0.0", Description: "second"})
+	_ = s.Put(Package{Name: "alpha-patch", Version: "1.0.0", Description: "first"})
+	_ = s.Put(Package{Name: "beta-patch", Version: "1.0.0", Description: "second"})
 
 	results, err := s.Search("alpha")
 	if err != nil {
@@ -63,8 +63,8 @@ func TestSearchByName(t *testing.T) {
 
 func TestSearchByDescription(t *testing.T) {
 	s := NewMemoryStore()
-	s.Put(Package{Name: "p1", Version: "1.0.0", Description: "machine learning model"})
-	s.Put(Package{Name: "p2", Version: "1.0.0", Description: "data processor"})
+	_ = s.Put(Package{Name: "p1", Version: "1.0.0", Description: "machine learning model"})
+	_ = s.Put(Package{Name: "p2", Version: "1.0.0", Description: "data processor"})
 
 	results, err := s.Search("machine")
 	if err != nil {
@@ -77,8 +77,8 @@ func TestSearchByDescription(t *testing.T) {
 
 func TestSearchByTag(t *testing.T) {
 	s := NewMemoryStore()
-	s.Put(Package{Name: "p1", Version: "1.0.0", Description: "desc", Tags: []string{"vision", "gpu"}})
-	s.Put(Package{Name: "p2", Version: "1.0.0", Description: "desc", Tags: []string{"audio"}})
+	_ = s.Put(Package{Name: "p1", Version: "1.0.0", Description: "desc", Tags: []string{"vision", "gpu"}})
+	_ = s.Put(Package{Name: "p2", Version: "1.0.0", Description: "desc", Tags: []string{"audio"}})
 
 	results, err := s.Search("vision")
 	if err != nil {
@@ -91,8 +91,8 @@ func TestSearchByTag(t *testing.T) {
 
 func TestSearchEmptyQuery(t *testing.T) {
 	s := NewMemoryStore()
-	s.Put(Package{Name: "p1", Version: "1.0.0", Description: "desc"})
-	s.Put(Package{Name: "p2", Version: "1.0.0", Description: "desc"})
+	_ = s.Put(Package{Name: "p1", Version: "1.0.0", Description: "desc"})
+	_ = s.Put(Package{Name: "p2", Version: "1.0.0", Description: "desc"})
 
 	results, err := s.Search("")
 	if err != nil {
@@ -105,7 +105,7 @@ func TestSearchEmptyQuery(t *testing.T) {
 
 func TestDelete(t *testing.T) {
 	s := NewMemoryStore()
-	s.Put(Package{Name: "del-me", Version: "1.0.0", Description: "delete test"})
+	_ = s.Put(Package{Name: "del-me", Version: "1.0.0", Description: "delete test"})
 
 	if err := s.Delete("del-me", "1.0.0"); err != nil {
 		t.Fatalf("Delete failed: %v", err)
@@ -127,8 +127,8 @@ func TestDeleteNotFound(t *testing.T) {
 
 func TestList(t *testing.T) {
 	s := NewMemoryStore()
-	s.Put(Package{Name: "b", Version: "1.0.0", Description: "beta"})
-	s.Put(Package{Name: "a", Version: "1.0.0", Description: "alpha"})
+	_ = s.Put(Package{Name: "b", Version: "1.0.0", Description: "beta"})
+	_ = s.Put(Package{Name: "a", Version: "1.0.0", Description: "alpha"})
 
 	all, err := s.List()
 	if err != nil {
@@ -144,8 +144,8 @@ func TestList(t *testing.T) {
 
 func TestPutUpdatesExisting(t *testing.T) {
 	s := NewMemoryStore()
-	s.Put(Package{Name: "test", Version: "1.0.0", Description: "original"})
-	s.Put(Package{Name: "test", Version: "1.0.0", Description: "updated"})
+	_ = s.Put(Package{Name: "test", Version: "1.0.0", Description: "original"})
+	_ = s.Put(Package{Name: "test", Version: "1.0.0", Description: "updated"})
 
 	got, err := s.Get("test", "1.0.0")
 	if err != nil {

@@ -8,7 +8,7 @@ import (
 
 func TestTokenCheck(t *testing.T) {
 	ts := NewMemoryTokenStore()
-	ts.Add("valid-token")
+	_ = ts.Add("valid-token")
 
 	if !ts.Check("valid-token") {
 		t.Error("expected valid-token to be found")
@@ -67,7 +67,7 @@ func TestExtractBearerTokenNoBearer(t *testing.T) {
 
 func TestRequireAuthValidToken(t *testing.T) {
 	ts := NewMemoryTokenStore()
-	ts.Add("good-token")
+	_ = ts.Add("good-token")
 
 	var called bool
 	handler := RequireAuth(ts, func(w http.ResponseWriter, r *http.Request) {
@@ -89,7 +89,7 @@ func TestRequireAuthValidToken(t *testing.T) {
 
 func TestRequireAuthInvalidToken(t *testing.T) {
 	ts := NewMemoryTokenStore()
-	ts.Add("good-token")
+	_ = ts.Add("good-token")
 
 	var called bool
 	handler := RequireAuth(ts, func(w http.ResponseWriter, r *http.Request) {
@@ -111,7 +111,7 @@ func TestRequireAuthInvalidToken(t *testing.T) {
 
 func TestRequireAuthNoToken(t *testing.T) {
 	ts := NewMemoryTokenStore()
-	ts.Add("good-token")
+	_ = ts.Add("good-token")
 
 	var called bool
 	handler := RequireAuth(ts, func(w http.ResponseWriter, r *http.Request) {
