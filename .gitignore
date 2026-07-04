@@ -7,7 +7,6 @@
 /vendor/
 /go/pkg/
 *.sum
-!go.sum
 go.work
 
 # Data
@@ -25,6 +24,7 @@ Thumbs.db
 *.swp
 *.swo
 
-# Editor backups
+# Editor backups & trailing-space typos
 * 2.*
+* 2/
 registry-server
