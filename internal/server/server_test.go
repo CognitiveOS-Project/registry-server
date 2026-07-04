@@ -6,8 +6,6 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/CognitiveOS-Project/registry-server/internal/auth"
@@ -20,7 +18,7 @@ func setupTestServer(t *testing.T) (*Server, string) {
 
 	memStore := store.NewMemoryStore()
 	tokenAuth := auth.NewMemoryTokenStore()
-	tokenAuth.Add("test-token-123")
+	_ = tokenAuth.Add("test-token-123")
 
 	cfg := Config{
 		Addr:      ":0",
@@ -29,13 +27,14 @@ func setupTestServer(t *testing.T) (*Server, string) {
 		TokenAuth: tokenAuth,
 	}
 
-	memStore.Put(store.Package{
+	_ = memStore.Put(store.Package{
 		Name:        "test-patch",
 		Version:     "1.0.0",
 		Description: "A test cognitive patch",
 		Author:      "test-author",
 		Size:        2048,
 		SHA256:      "deadbeef",
+		DownloadURL: "https://example.com/test-patch-1.0.0.cgp",
 		Tags:        []string{"test", "alpha"},
 	})
 
@@ -53,7 +52,7 @@ func TestHealth(t *testing.T) {
 	}
 
 	var resp map[string]string
-	json.NewDecoder(w.Body).Decode(&resp)
+	_ = json.NewDecoder(w.Body).Decode(&resp)
 	if resp["status"] != "ok" {
 		t.Errorf("expected status ok, got %s", resp["status"])
 	}
@@ -70,7 +69,7 @@ func TestSearch(t *testing.T) {
 	}
 
 	var results []store.Package
-	json.NewDecoder(w.Body).Decode(&results)
+	_ = json.NewDecoder(w.Body).Decode(&results)
 	if len(results) == 0 {
 		t.Fatal("expected search results")
 	}
@@ -90,7 +89,7 @@ func TestSearchNoQuery(t *testing.T) {
 	}
 
 	var results []store.Package
-	json.NewDecoder(w.Body).Decode(&results)
+	_ = json.NewDecoder(w.Body).Decode(&results)
 	if len(results) == 0 {
 		t.Error("expected at least one result with empty query")
 	}
@@ -107,7 +106,7 @@ func TestGetPatch(t *testing.T) {
 	}
 
 	var pkg store.Package
-	json.NewDecoder(w.Body).Decode(&pkg)
+	_ = json.NewDecoder(w.Body).Decode(&pkg)
 	if pkg.Name != "test-patch" {
 		t.Errorf("expected test-patch, got %s", pkg.Name)
 	}
@@ -128,41 +127,50 @@ func TestGetPatchNotFound(t *testing.T) {
 }
 
 func TestDownload(t *testing.T) {
-	srv, dataDir := setupTestServer(t)
-
-	cgpContent := []byte("fake .cgp content")
-	cgpPath := filepath.Join(dataDir, "test-patch-1.0.0.cgp")
-	if err := os.WriteFile(cgpPath, cgpContent, 0644); err != nil {
-		t.Fatalf("failed to write test .cgp file: %v", err)
-	}
-
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/v1/patches/test-patch/1.0.0/download", nil)
-	srv.ServeHTTP(w, r)
-
-	if w.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d", w.Code)
-	}
-
-	if w.Body.String() != string(cgpContent) {
-		t.Errorf("expected body %q, got %q", string(cgpContent), w.Body.String())
-	}
-
-	ct := w.Header().Get("Content-Type")
-	if ct != "application/octet-stream" {
-		t.Errorf("expected application/octet-stream, got %s", ct)
-	}
-}
-
-func TestDownloadNotFound(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/v1/patches/test-patch/1.0.0/download", nil)
 	srv.ServeHTTP(w, r)
 
+	if w.Code != http.StatusFound {
+		t.Errorf("expected 302 redirect, got %d", w.Code)
+	}
+
+	loc := w.Header().Get("Location")
+	if loc != "https://example.com/test-patch-1.0.0.cgp" {
+		t.Errorf("expected redirect to download URL, got %s", loc)
+	}
+}
+
+func TestDownloadNotFound(t *testing.T) {
+	srv, _ := setupTestServer(t)
+
+	// Package nonexistent/9.9.9 doesn't exist at all
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/v1/patches/nonexistent/9.9.9/download", nil)
+	srv.ServeHTTP(w, r)
+
 	if w.Code != http.StatusNotFound {
-		t.Errorf("expected 404 for missing .cgp file, got %d", w.Code)
+		t.Errorf("expected 404 for missing package, got %d", w.Code)
+	}
+}
+
+func TestDownloadNoURL(t *testing.T) {
+	srv, _ := setupTestServer(t)
+
+	// Package no-download exists but has no DownloadURL
+	_ = srv.config.Store.Put(store.Package{
+		Name:    "no-download",
+		Version: "1.0.0",
+	})
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/v1/patches/no-download/1.0.0/download", nil)
+	srv.ServeHTTP(w, r)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404 for package without download URL, got %d", w.Code)
 	}
 }
 
@@ -181,17 +189,17 @@ func TestPublishRequiresAuth(t *testing.T) {
 }
 
 func TestPublishWithAuth(t *testing.T) {
-	srv, dataDir := setupTestServer(t)
+	srv, _ := setupTestServer(t)
 
 	var buf bytes.Buffer
 	mp := multipart.NewWriter(&buf)
-	mp.WriteField("name", "new-patch")
-	mp.WriteField("version", "0.1.0")
-	mp.WriteField("description", "brand new")
-	mp.WriteField("author", "tester")
+	_ = mp.WriteField("name", "new-patch")
+	_ = mp.WriteField("version", "0.1.0")
+	_ = mp.WriteField("description", "brand new")
+	_ = mp.WriteField("author", "tester")
 
 	fw, _ := mp.CreateFormFile("file", "patch.cgp")
-	fw.Write([]byte("cgp data here"))
+	_, _ = fw.Write([]byte("cgp data here"))
 	mp.Close()
 
 	w := httptest.NewRecorder()
@@ -205,16 +213,50 @@ func TestPublishWithAuth(t *testing.T) {
 	}
 
 	var pkg store.Package
-	json.NewDecoder(w.Body).Decode(&pkg)
+	_ = json.NewDecoder(w.Body).Decode(&pkg)
 	if pkg.Name != "new-patch" {
 		t.Errorf("expected new-patch, got %s", pkg.Name)
 	}
 	if pkg.Size <= 0 {
 		t.Errorf("expected size > 0, got %d", pkg.Size)
 	}
+	if pkg.SHA256 == "" {
+		t.Error("expected SHA-256 checksum to be computed")
+	}
+}
 
-	if _, err := os.Stat(filepath.Join(dataDir, "new-patch-0.1.0.cgp")); os.IsNotExist(err) {
-		t.Error("expected .cgp file to exist on disk")
+func TestPublishJSONWithDownloadURL(t *testing.T) {
+	srv, _ := setupTestServer(t)
+
+	body := bytes.NewBufferString(`{
+		"name": "json-patch",
+		"version": "2.0.0",
+		"description": "published via JSON",
+		"author": "json-test",
+		"download_url": "https://example.com/json-patch-2.0.0.cgp",
+		"sha256": "abcdef1234567890"
+	}`)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/v1/patches", body)
+	r.Header.Set("Content-Type", "application/json")
+	r.Header.Set("Authorization", "Bearer test-token-123")
+	srv.ServeHTTP(w, r)
+
+	if w.Code != http.StatusCreated {
+		t.Errorf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var pkg store.Package
+	_ = json.NewDecoder(w.Body).Decode(&pkg)
+	if pkg.Name != "json-patch" {
+		t.Errorf("expected json-patch, got %s", pkg.Name)
+	}
+	if pkg.DownloadURL != "https://example.com/json-patch-2.0.0.cgp" {
+		t.Errorf("expected download_url, got %s", pkg.DownloadURL)
+	}
+	if pkg.SHA256 != "abcdef1234567890" {
+		t.Errorf("expected sha256, got %s", pkg.SHA256)
 	}
 }
 
@@ -233,7 +275,7 @@ func TestUnlock(t *testing.T) {
 	}
 
 	var resp map[string]interface{}
-	json.NewDecoder(w.Body).Decode(&resp)
+	_ = json.NewDecoder(w.Body).Decode(&resp)
 	if resp["status"] != "ok" {
 		t.Errorf("expected status ok, got %s", resp["status"])
 	}

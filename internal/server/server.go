@@ -3,8 +3,6 @@ package server
 import (
 	"log"
 	"net/http"
-	"os"
-	"path/filepath"
 
 	"github.com/CognitiveOS-Project/registry-server/internal/auth"
 	"github.com/CognitiveOS-Project/registry-server/internal/store"
@@ -68,16 +66,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) Start() error {
-	log.Printf("Starting registry server on %s", s.config.Addr)
-	log.Printf("Data directory: %s", s.config.DataDir)
-
-	if err := os.MkdirAll(s.config.DataDir, 0755); err != nil {
-		return err
-	}
-
+	log.Printf("Starting registry notary on %s", s.config.Addr)
 	return http.ListenAndServe(s.config.Addr, s)
-}
-
-func (s *Server) cgpPath(name, version string) string {
-	return filepath.Join(s.config.DataDir, name+"-"+version+".cgp")
 }
