@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -90,21 +89,12 @@ func (s *Server) handlePublish() http.HandlerFunc {
 			version := r.FormValue("version")
 			description := r.FormValue("description")
 			author := r.FormValue("author")
-			sourceRepository := r.FormValue("source_repository")
-			sourceIssues := r.FormValue("source_issues")
 			downloadURL := r.FormValue("download_url")
 			tagsStr := r.FormValue("tags")
 
 			if name == "" || version == "" {
 				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name and version are required"})
 				return
-			}
-
-			if sourceIssues != "" {
-				if err := checkURL(sourceIssues); err != nil {
-					writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "invalid or unreachable issues URL: " + err.Error()})
-					return
-				}
 			}
 
 			var tags []string
@@ -116,14 +106,12 @@ func (s *Server) handlePublish() http.HandlerFunc {
 			}
 
 			pkg := store.Package{
-				Name:             name,
-				Version:          version,
-				Description:      description,
-				Author:           author,
-				SourceRepository: sourceRepository,
-				SourceIssues:     sourceIssues,
-				DownloadURL:      downloadURL,
-				Tags:             tags,
+				Name:        name,
+				Version:     version,
+				Description: description,
+				Author:      author,
+				DownloadURL: downloadURL,
+				Tags:        tags,
 			}
 
 			file, _, err := r.FormFile("file")
@@ -148,15 +136,13 @@ func (s *Server) handlePublish() http.HandlerFunc {
 		}
 
 		var req struct {
-			Name             string   `json:"name"`
-			Version          string   `json:"version"`
-			Description      string   `json:"description"`
-			Author           string   `json:"author"`
-			SourceRepository string   `json:"source_repository"`
-			SourceIssues     string   `json:"source_issues"`
-			DownloadURL      string   `json:"download_url"`
-			SHA256           string   `json:"sha256"`
-			Tags             []string `json:"tags"`
+			Name        string   `json:"name"`
+			Version     string   `json:"version"`
+			Description string   `json:"description"`
+			Author      string   `json:"author"`
+			DownloadURL string   `json:"download_url"`
+			SHA256      string   `json:"sha256"`
+			Tags        []string `json:"tags"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON: " + err.Error()})
@@ -168,23 +154,14 @@ func (s *Server) handlePublish() http.HandlerFunc {
 			return
 		}
 
-		if req.SourceIssues != "" {
-			if err := checkURL(req.SourceIssues); err != nil {
-				writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "invalid or unreachable issues URL: " + err.Error()})
-				return
-			}
-		}
-
 		pkg := store.Package{
-			Name:             req.Name,
-			Version:          req.Version,
-			Description:      req.Description,
-			Author:           req.Author,
-			SourceRepository: req.SourceRepository,
-			SourceIssues:     req.SourceIssues,
-			DownloadURL:      req.DownloadURL,
-			SHA256:           req.SHA256,
-			Tags:             req.Tags,
+			Name:        req.Name,
+			Version:     req.Version,
+			Description: req.Description,
+			Author:      req.Author,
+			DownloadURL: req.DownloadURL,
+			SHA256:      req.SHA256,
+			Tags:        req.Tags,
 		}
 
 		if err := s.config.Store.Put(pkg); err != nil {
@@ -224,21 +201,5 @@ func (s *Server) handleUnlock() http.HandlerFunc {
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
+	_ = json.NewEncoder(w).Encode(v)
 }
-
-func checkURL(rawURL string) error {
-	if rawURL == "" {
-		return fmt.Errorf("empty URL")
-	}
-	u, err := http.Get(rawURL)
-	if err != nil {
-		return fmt.Errorf("unreachable: %w", err)
-	}
-	u.Body.Close()
-	if u.StatusCode != 200 {
-		return fmt.Errorf("HTTP %d", u.StatusCode)
-	}
-	return nil
-}
-

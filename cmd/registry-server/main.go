@@ -22,7 +22,7 @@ func main() {
 	memStore := store.NewMemoryStore()
 	tokenStore := auth.NewMemoryTokenStore()
 
-	tokenStore.Add("test-token")
+	_ = tokenStore.Add("test-token")
 
 	cfg := server.Config{
 		Addr:      *addr,
