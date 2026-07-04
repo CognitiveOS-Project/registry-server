@@ -6,6 +6,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	"github.com/CognitiveOS-Project/registry-server/internal/auth"
@@ -223,6 +224,9 @@ func TestPublishWithAuth(t *testing.T) {
 	if pkg.SHA256 == "" {
 		t.Error("expected SHA-256 checksum to be computed")
 	}
+
+	// Notary mode: no file stored on disk
+	assertFileNotExist(t, "new-patch-0.1.0.cgp")
 }
 
 func TestPublishJSONWithDownloadURL(t *testing.T) {
@@ -258,6 +262,9 @@ func TestPublishJSONWithDownloadURL(t *testing.T) {
 	if pkg.SHA256 != "abcdef1234567890" {
 		t.Errorf("expected sha256, got %s", pkg.SHA256)
 	}
+
+	// Notary mode: no file stored on disk
+	assertFileNotExist(t, "json-patch-2.0.0.cgp")
 }
 
 func TestUnlock(t *testing.T) {
@@ -307,6 +314,13 @@ func TestUnlockMissingFields(t *testing.T) {
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func assertFileNotExist(t *testing.T, name string) {
+	t.Helper()
+	if _, err := os.Stat(name); err == nil {
+		t.Errorf("expected file %s not to exist on disk (notary mode)", name)
 	}
 }
 
