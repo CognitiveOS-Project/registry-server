@@ -7,6 +7,7 @@
 /vendor/
 /go/pkg/
 *.sum
+!go.sum
 go.work
 
 # Data
