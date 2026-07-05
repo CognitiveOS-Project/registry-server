@@ -37,6 +37,9 @@ func TestPutAndGet(t *testing.T) {
 	if got.UpdatedAt == "" {
 		t.Error("expected UpdatedAt to be set")
 	}
+	if got.Status != "active" {
+		t.Errorf("expected default status active, got %s", got.Status)
+	}
 }
 
 func TestGetNotFound(t *testing.T) {
@@ -156,5 +159,116 @@ func TestPutUpdatesExisting(t *testing.T) {
 	}
 	if got.CreatedAt == "" {
 		t.Error("expected CreatedAt to be retained")
+	}
+}
+
+func TestVersions(t *testing.T) {
+	s := NewMemoryStore()
+	_ = s.Put(Package{Name: "multi", Version: "1.0.0", Description: "v1"})
+	_ = s.Put(Package{Name: "multi", Version: "2.0.0", Description: "v2"})
+	_ = s.Put(Package{Name: "other", Version: "1.0.0", Description: "other"})
+
+	versions, err := s.Versions("multi")
+	if err != nil {
+		t.Fatalf("Versions failed: %v", err)
+	}
+	if len(versions) != 2 {
+		t.Errorf("expected 2 versions, got %d", len(versions))
+	}
+	if versions[0].Version != "2.0.0" {
+		t.Errorf("expected first version 2.0.0 (descending), got %s", versions[0].Version)
+	}
+}
+
+func TestVersionsNotFound(t *testing.T) {
+	s := NewMemoryStore()
+	versions, err := s.Versions("nonexistent")
+	if err != nil {
+		t.Fatalf("Versions failed: %v", err)
+	}
+	if len(versions) != 0 {
+		t.Errorf("expected 0 versions, got %d", len(versions))
+	}
+}
+
+func TestIncrementDownloads(t *testing.T) {
+	s := NewMemoryStore()
+	_ = s.Put(Package{Name: "popular", Version: "1.0.0", Description: "desc"})
+
+	count, err := s.IncrementDownloads("popular", "1.0.0")
+	if err != nil {
+		t.Fatalf("IncrementDownloads failed: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("expected count 1, got %d", count)
+	}
+
+	count, err = s.IncrementDownloads("popular", "1.0.0")
+	if err != nil {
+		t.Fatalf("IncrementDownloads failed: %v", err)
+	}
+	if count != 2 {
+		t.Errorf("expected count 2, got %d", count)
+	}
+}
+
+func TestIncrementDownloadsNotFound(t *testing.T) {
+	s := NewMemoryStore()
+	_, err := s.IncrementDownloads("missing", "1.0.0")
+	if err != ErrNotFound {
+		t.Errorf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestSetStatus(t *testing.T) {
+	s := NewMemoryStore()
+	_ = s.Put(Package{Name: "test", Version: "1.0.0", Description: "desc"})
+
+	if err := s.SetStatus("test", "1.0.0", "deprecated"); err != nil {
+		t.Fatalf("SetStatus failed: %v", err)
+	}
+
+	pkg, _ := s.Get("test", "1.0.0")
+	if pkg.Status != "deprecated" {
+		t.Errorf("expected status deprecated, got %s", pkg.Status)
+	}
+}
+
+func TestSetStatusNotFound(t *testing.T) {
+	s := NewMemoryStore()
+	err := s.SetStatus("missing", "1.0.0", "deprecated")
+	if err != ErrNotFound {
+		t.Errorf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestFileStore(t *testing.T) {
+	path := t.TempDir() + "/patches.json"
+	fs := NewFileStore(path)
+
+	_ = fs.Put(Package{Name: "persist", Version: "1.0.0", Description: "survives restart"})
+
+	// Create new FileStore loading from same path
+	fs2 := NewFileStore(path)
+	pkg, err := fs2.Get("persist", "1.0.0")
+	if err != nil {
+		t.Fatalf("Get from reloaded store failed: %v", err)
+	}
+	if pkg.Description != "survives restart" {
+		t.Errorf("expected 'survives restart', got '%s'", pkg.Description)
+	}
+}
+
+func TestFileStoreDelete(t *testing.T) {
+	path := t.TempDir() + "/patches.json"
+	fs := NewFileStore(path)
+
+	_ = fs.Put(Package{Name: "tmp", Version: "1.0.0", Description: "temp"})
+	_ = fs.Delete("tmp", "1.0.0")
+
+	fs2 := NewFileStore(path)
+	all, _ := fs2.List()
+	if len(all) != 0 {
+		t.Errorf("expected 0 packages after delete, got %d", len(all))
 	}
 }

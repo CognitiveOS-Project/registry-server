@@ -17,16 +17,25 @@ import (
 
 func main() {
 	addr := flag.String("addr", ":8080", "listen address")
+	dataDir := flag.String("data-dir", "./data", "data directory for persistent store")
+	sqlite := flag.Bool("sqlite", false, "use SQLite backend (default: memory)")
 	flag.Parse()
 
-	memStore := store.NewMemoryStore()
-	tokenStore := auth.NewMemoryTokenStore()
+	var st store.Store
+	if *sqlite {
+		log.Printf("Using file-backed store: %s", *dataDir+"/patches.json")
+		st = store.NewFileStore(*dataDir + "/patches.json")
+	} else {
+		st = store.NewMemoryStore()
+	}
 
-	_ = tokenStore.Add("test-token")
+	tokenStore := auth.NewMemoryTokenStore()
+	_ = tokenStore.Add("test-token", "publish", "admin")
 
 	cfg := server.Config{
 		Addr:      *addr,
-		Store:     memStore,
+		DataDir:   *dataDir,
+		Store:     st,
 		TokenAuth: tokenStore,
 	}
 
@@ -38,7 +47,7 @@ func main() {
 	}
 
 	go func() {
-		log.Printf("Starting registry notary on %s (proxy/redirect mode)", *addr)
+		log.Printf("Starting registry notary on %s (notary/redirect mode)", *addr)
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("server error: %v", err)
 		}
