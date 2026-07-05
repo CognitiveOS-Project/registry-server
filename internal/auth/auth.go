@@ -2,40 +2,53 @@ package auth
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"sync"
 )
 
-var ErrUnauthorized = errors.New("unauthorized")
+var (
+	ErrUnauthorized = errors.New("unauthorized")
+	ErrForbidden    = errors.New("forbidden")
+)
+
+type Token struct {
+	Value  string
+	Scopes []string
+}
 
 type TokenStore interface {
-	Check(token string) bool
-	Add(token string) error
+	Get(token string) (*Token, bool)
+	Add(token string, scopes ...string) error
 	Remove(token string) error
 }
 
 type MemoryTokenStore struct {
 	mu     sync.RWMutex
-	tokens map[string]bool
+	tokens map[string]*Token
 }
 
 func NewMemoryTokenStore() *MemoryTokenStore {
 	return &MemoryTokenStore{
-		tokens: make(map[string]bool),
+		tokens: make(map[string]*Token),
 	}
 }
 
-func (s *MemoryTokenStore) Check(token string) bool {
+func (s *MemoryTokenStore) Get(token string) (*Token, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.tokens[token]
+	t, ok := s.tokens[token]
+	return t, ok
 }
 
-func (s *MemoryTokenStore) Add(token string) error {
+func (s *MemoryTokenStore) Add(token string, scopes ...string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.tokens[token] = true
+	if len(scopes) == 0 {
+		scopes = []string{"publish"}
+	}
+	s.tokens[token] = &Token{Value: token, Scopes: scopes}
 	return nil
 }
 
@@ -54,13 +67,56 @@ func ExtractBearerToken(r *http.Request) string {
 	return strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
 }
 
-func RequireAuth(ts TokenStore, next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		token := ExtractBearerToken(r)
-		if token == "" || !ts.Check(token) {
-			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
-			return
+type contextKey string
+
+const tokenContextKey contextKey = "auth_token"
+
+func RequireAuth(ts TokenStore, requiredScopes ...string) func(http.HandlerFunc) http.HandlerFunc {
+	return func(next http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			tokenVal := ExtractBearerToken(r)
+			if tokenVal == "" {
+				writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "missing authorization header")
+				return
+			}
+
+			token, ok := ts.Get(tokenVal)
+			if !ok {
+				writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "invalid token")
+				return
+			}
+
+			if len(requiredScopes) > 0 {
+				if !hasScopes(token.Scopes, requiredScopes) {
+					writeError(w, http.StatusForbidden, "FORBIDDEN",
+						fmt.Sprintf("token requires scope(s): %s", strings.Join(requiredScopes, ", ")))
+					return
+				}
+			}
+
+			next(w, r)
 		}
-		next(w, r)
 	}
+}
+
+func hasScopes(tokenScopes, required []string) bool {
+	for _, req := range required {
+		found := false
+		for _, s := range tokenScopes {
+			if s == req {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}
+
+func writeError(w http.ResponseWriter, status int, code, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	fmt.Fprintf(w, `{"error":{"code":"%s","message":"%s"}}`, code, message)
 }
