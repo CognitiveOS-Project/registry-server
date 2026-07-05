@@ -6,33 +6,59 @@ import (
 	"testing"
 )
 
-func TestTokenCheck(t *testing.T) {
+func TestTokenGet(t *testing.T) {
 	ts := NewMemoryTokenStore()
-	_ = ts.Add("valid-token")
+	_ = ts.Add("valid-token", "publish")
 
-	if !ts.Check("valid-token") {
-		t.Error("expected valid-token to be found")
+	tok, ok := ts.Get("valid-token")
+	if !ok {
+		t.Fatal("expected valid-token to be found")
 	}
-	if ts.Check("invalid-token") {
-		t.Error("expected invalid-token to not be found")
+	if tok.Value != "valid-token" {
+		t.Errorf("expected value 'valid-token', got '%s'", tok.Value)
+	}
+}
+
+func TestTokenGetNotFound(t *testing.T) {
+	ts := NewMemoryTokenStore()
+	_, ok := ts.Get("nonexistent")
+	if ok {
+		t.Error("expected nonexistent token to not be found")
 	}
 }
 
 func TestTokenAddAndRemove(t *testing.T) {
 	ts := NewMemoryTokenStore()
 
-	if err := ts.Add("new-token"); err != nil {
+	if err := ts.Add("new-token", "publish", "admin"); err != nil {
 		t.Fatalf("Add failed: %v", err)
 	}
-	if !ts.Check("new-token") {
-		t.Error("expected new-token to be found after Add")
+	tok, ok := ts.Get("new-token")
+	if !ok {
+		t.Fatal("expected new-token to be found after Add")
+	}
+	if len(tok.Scopes) != 2 {
+		t.Errorf("expected 2 scopes, got %d", len(tok.Scopes))
 	}
 
 	if err := ts.Remove("new-token"); err != nil {
 		t.Fatalf("Remove failed: %v", err)
 	}
-	if ts.Check("new-token") {
+	if _, ok := ts.Get("new-token"); ok {
 		t.Error("expected new-token to not be found after Remove")
+	}
+}
+
+func TestTokenDefaultScopes(t *testing.T) {
+	ts := NewMemoryTokenStore()
+	_ = ts.Add("default-token")
+
+	tok, ok := ts.Get("default-token")
+	if !ok {
+		t.Fatal("expected default-token to be found")
+	}
+	if len(tok.Scopes) != 1 || tok.Scopes[0] != "publish" {
+		t.Errorf("expected default scope [publish], got %v", tok.Scopes)
 	}
 }
 
@@ -67,10 +93,11 @@ func TestExtractBearerTokenNoBearer(t *testing.T) {
 
 func TestRequireAuthValidToken(t *testing.T) {
 	ts := NewMemoryTokenStore()
-	_ = ts.Add("good-token")
+	_ = ts.Add("good-token", "publish")
 
 	var called bool
-	handler := RequireAuth(ts, func(w http.ResponseWriter, r *http.Request) {
+	mw := RequireAuth(ts, "publish")
+	handler := mw(func(w http.ResponseWriter, r *http.Request) {
 		called = true
 	})
 
@@ -89,10 +116,11 @@ func TestRequireAuthValidToken(t *testing.T) {
 
 func TestRequireAuthInvalidToken(t *testing.T) {
 	ts := NewMemoryTokenStore()
-	_ = ts.Add("good-token")
+	_ = ts.Add("good-token", "publish")
 
 	var called bool
-	handler := RequireAuth(ts, func(w http.ResponseWriter, r *http.Request) {
+	mw := RequireAuth(ts, "publish")
+	handler := mw(func(w http.ResponseWriter, r *http.Request) {
 		called = true
 	})
 
@@ -109,12 +137,36 @@ func TestRequireAuthInvalidToken(t *testing.T) {
 	}
 }
 
-func TestRequireAuthNoToken(t *testing.T) {
+func TestRequireAuthMissingScope(t *testing.T) {
 	ts := NewMemoryTokenStore()
-	_ = ts.Add("good-token")
+	_ = ts.Add("readonly-token", "read")
 
 	var called bool
-	handler := RequireAuth(ts, func(w http.ResponseWriter, r *http.Request) {
+	mw := RequireAuth(ts, "publish")
+	handler := mw(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+	})
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/", nil)
+	r.Header.Set("Authorization", "Bearer readonly-token")
+	handler(w, r)
+
+	if called {
+		t.Error("expected handler NOT to be called when scope missing")
+	}
+	if w.Code != http.StatusForbidden {
+		t.Errorf("expected 403, got %d", w.Code)
+	}
+}
+
+func TestRequireAuthNoToken(t *testing.T) {
+	ts := NewMemoryTokenStore()
+	_ = ts.Add("good-token", "publish")
+
+	var called bool
+	mw := RequireAuth(ts, "publish")
+	handler := mw(func(w http.ResponseWriter, r *http.Request) {
 		called = true
 	})
 
