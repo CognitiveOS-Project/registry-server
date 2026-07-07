@@ -122,7 +122,7 @@ func Run(manifestRaw json.RawMessage, archive io.Reader, sha256 string) Result {
 	res.Passed["A3"] = true
 
 	// A4: dependency cycle
-	if cycles := findCycles(m.Dependencies); len(cycles) > 0 {
+	if cycles := findCycles(m.Name, m.Dependencies); len(cycles) > 0 {
 		res.Errors = append(res.Errors, RuleError{Rule: "A4", Message: "dependency cycle: " + strings.Join(cycles, " -> ")})
 		return res
 	}
@@ -187,41 +187,12 @@ func checkSchema(m Manifest) []string {
 	return errs
 }
 
-func findCycles(deps map[string]string) []string {
-	visited := make(map[string]bool)
-	inStack := make(map[string]bool)
-	var path []string
-
-	var dfs func(node string) []string
-	dfs = func(node string) []string {
-		if inStack[node] {
-			path = append(path, node)
-			return path
-		}
-		if visited[node] {
-			return nil
-		}
-		visited[node] = true
-		inStack[node] = true
-		path = append(path, node)
-
-		if deps != nil {
-			for dep := range deps {
-				result := dfs(dep)
-				if result != nil {
-					return result
-				}
-			}
-		}
-
-		inStack[node] = false
-		path = path[:len(path)-1]
-		return nil
-	}
-
-	for dep := range deps {
-		if result := dfs(dep); result != nil {
-			return result
+func findCycles(name string, deps map[string]string) []string {
+	// With only one level of dependency info (no store query),
+	// the only detectable cycle is a self-dependency.
+	if deps != nil {
+		if _, ok := deps[name]; ok {
+			return []string{name, name}
 		}
 	}
 	return nil

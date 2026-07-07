@@ -553,7 +553,7 @@ func TestDependencyValidation(t *testing.T) {
 		"version":      "1.0.0",
 		"description":  "uses existing-dep",
 		"download_url": "https://example.com/dep-user-1.0.0.cgp",
-		"sha256":       "hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh",
+		"sha256":       "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
 		"manifest":     json.RawMessage(manifest),
 	}
 	body, _ := json.Marshal(payload)
