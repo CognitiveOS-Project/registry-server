@@ -21,7 +21,10 @@ The `.cgp` package registry — a Go HTTP server for hosting, searching, and dis
 ## Build
 
 ```bash
-go build -o bin/registry-server ./cmd/registry-server
+make build    # compile to build/bin/registry-server
+make test     # run tests
+make lint     # go vet
+make clean    # remove build artifacts
 ```
 
 ## Storage
