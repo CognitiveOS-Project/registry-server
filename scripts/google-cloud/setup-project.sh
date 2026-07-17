@@ -36,10 +36,25 @@ gcloud config set project "$PROJECT_ID"
 echo ""
 echo "Enabling required APIs..."
 gcloud services enable run.googleapis.com
-gcloud services enable containerregistry.googleapis.com
+gcloud services enable artifactregistry.googleapis.com
 gcloud services enable cloudbuild.googleapis.com
 
 echo "APIs enabled."
+
+# Create Artifact Registry Docker repository
+REPO_NAME="registry-server"
+AR_REGION="us"
+echo ""
+echo "Creating Artifact Registry repository: $REPO_NAME"
+gcloud artifacts repositories describe "$REPO_NAME" \
+    --location="$AR_REGION" \
+    2>/dev/null || \
+gcloud artifacts repositories create "$REPO_NAME" \
+    --repository-format=docker \
+    --location="$AR_REGION" \
+    --description="Registry server Docker images"
+
+echo "Artifact Registry repository ready."
 
 # Create service account
 SA_NAME="registry-deployer"

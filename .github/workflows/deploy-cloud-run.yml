@@ -9,7 +9,9 @@ env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   SERVICE_NAME: registry-server
   REGION: us-central1
-  IMAGE: gcr.io/${{ secrets.GCP_PROJECT_ID }}/registry-server
+  AR_REGION: us
+  REPO_NAME: registry-server
+  IMAGE: us-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/registry-server/registry-server
 
 jobs:
   build-and-deploy:
@@ -30,8 +32,8 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Configure Docker for GCR
-        run: gcloud auth configure-docker --quiet
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker $AR_REGION-docker.pkg.dev --quiet
 
       - name: Build and push Docker image
         run: |
