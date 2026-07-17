@@ -1,0 +1,12 @@
+version: "2"
+linters:
+  disable:
+    - errcheck
+  enable:
+    - govet
+    - staticcheck
+    - ineffassign
+    - unused
+issues:
+  exclude-dirs:
+    - vendor
