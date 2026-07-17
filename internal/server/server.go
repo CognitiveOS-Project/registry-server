@@ -65,7 +65,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v1/patches/{name}/{version}/validate", adminAuth(s.handleValidate()))
 
 	// Unlock (public)
-	s.mux.HandleFunc("POST /v1/unlock", s.handleUnlock())
+	s.mux.HandleFunc("POST /v1/patches/{name}/{version}/unlock", s.handleUnlock())
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {

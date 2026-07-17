@@ -7,13 +7,13 @@ import (
 func TestPutAndGet(t *testing.T) {
 	s := NewMemoryStore()
 	pkg := Package{
-		Name:        "test-patch",
-		Version:     "1.0.0",
-		Description: "A test patch",
-		Author:      "test",
-		Size:        1024,
-		SHA256:      "abc123",
-		Tags:        []string{"test", "ai"},
+		Name:           "test-patch",
+		Version:        "1.0.0",
+		Description:    "A test patch",
+		Author:         "test",
+		Size:           1024,
+		ChecksumSHA256: "abc123",
+		Tags:           []string{"test", "ai"},
 	}
 
 	if err := s.Put(pkg); err != nil {
