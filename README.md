@@ -85,12 +85,35 @@ docker run -p 8080:8080 registry-server
 ```
 
 The Dockerfile uses a multi-stage build:
-- **Build stage:** `golang:1.23` with `CGO_ENABLED=0` for a static binary
+- **Build stage:** `golang:1.25` with `CGO_ENABLED=0` for a static binary
 - **Runtime stage:** `gcr.io/distroless/static-debian12` (~10 MB image)
 
 ## Deployment
 
-### Google Cloud Run
+### Google Cloud Run (Primary)
+
+Deployment is automated via GitHub Actions. Push to `main` triggers `deploy-cloud-run.yml`.
+
+**Setup scripts:**
+
+```bash
+./scripts/google-cloud/setup-project.sh   # Create GCP project + service account
+./scripts/cloudflare/setup-r2.sh           # Create R2 bucket + API token
+```
+
+**GitHub Secrets** (required for CI/CD):
+
+| Secret | Source | Description |
+|--------|--------|-------------|
+| `GCP_PROJECT_ID` | GCP Console | Google Cloud project ID |
+| `GCP_SA_KEY` | GCP IAM → Service Accounts → JSON key | Deploy authentication |
+| `BASE_DOMAIN` | Configurable | Base domain (default: `cognitive-os.org`) |
+| `R2_ENDPOINT` | Cloudflare R2 dashboard | S3-compatible endpoint (`https://<account-id>.r2.cloudflarestorage.com`) |
+| `R2_BUCKET` | Cloudflare R2 dashboard | Bucket name (`cognitiveos-registry`) |
+| `R2_ACCESS_KEY` | Cloudflare R2 API tokens | S3 access key |
+| `R2_SECRET_KEY` | Cloudflare R2 API tokens | S3 secret key |
+
+**Manual deploy:**
 
 ```bash
 gcloud run deploy registry-server \
@@ -115,6 +138,7 @@ make build
 
 - In-memory store (default)
 - File-backed store with `-sqlite` flag (writes to `DATA_DIR/patches.json`)
+- S3-compatible store via env vars (`S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_REGION`)
 
 ## Middleware Chain
 
@@ -122,7 +146,7 @@ make build
 Request → CORS → AntiBot → RateLimit → Auth (per-route) → Handler
 ```
 
-## Storage (Planned)
+## Storage (Implemented)
 
 - S3-compatible interface (Cloudflare R2 default, configurable via `S3_*` env vars)
 - SSH public key authentication for publishers (SSHSIG protocol)
