@@ -3,7 +3,6 @@
 .github
 build
 data
-scripts
 *_test.go
 Makefile
 LICENSE
