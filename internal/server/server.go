@@ -14,6 +14,7 @@ type Config struct {
 	DataDir   string
 	Store     store.Store
 	TokenAuth auth.TokenStore
+	SSHKeys   auth.SSHKeyStore
 }
 
 type Server struct {
@@ -35,6 +36,9 @@ func New(config Config) *Server {
 	}
 	if config.TokenAuth == nil {
 		config.TokenAuth = auth.NewMemoryTokenStore()
+	}
+	if config.SSHKeys == nil {
+		config.SSHKeys = auth.NewMemorySSHKeyStore()
 	}
 
 	s := &Server{
@@ -59,6 +63,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v1/patches/{name}/{version}", s.handleGetPatch())
 	s.mux.HandleFunc("GET /v1/patches/{name}/{version}/download", s.handleDownload())
 	s.mux.HandleFunc("GET /v1/patches/{name}/dependencies", s.handleGetDependencies())
+	s.mux.HandleFunc("GET /v1/notary/check", s.handleNotaryCheck())
+
+	s.mux.HandleFunc("POST /v1/auth/register", s.handleAuthRegister())
 
 	s.mux.HandleFunc("POST /v1/patches", publishAuth(s.handlePublish()))
 	s.mux.HandleFunc("PUT /v1/patches/{name}/{version}", publishAuth(s.handlePutVersion()))
@@ -72,7 +79,7 @@ func (s *Server) routes() {
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-SSH-Fingerprint, X-SSH-Signature")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Frame-Options", "DENY")
 

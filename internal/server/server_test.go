@@ -415,8 +415,11 @@ func TestPublishWithManifestAndDownloadURL(t *testing.T) {
 	if pkg["name"] != "json-patch" {
 		t.Errorf("expected json-patch, got %s", pkg["name"])
 	}
-	if pkg["download_url"] != "https://example.com/json-patch-2.0.0.cgp" {
-		t.Errorf("expected download_url, got %s", pkg["download_url"])
+	urls, ok := pkg["download_urls"].(map[string]interface{})
+	if !ok || urls == nil {
+		t.Errorf("expected download_urls map, got %v", pkg["download_urls"])
+	} else if urls[""] != "https://example.com/json-patch-2.0.0.cgp" {
+		t.Errorf("expected download_urls[''], got %s", urls[""])
 	}
 }
 

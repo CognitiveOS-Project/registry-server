@@ -31,10 +31,24 @@ func main() {
 	}
 
 	var st store.Store
-	if *sqlite {
+	if s3Endpoint := os.Getenv("S3_ENDPOINT"); s3Endpoint != "" {
+		log.Printf("Using S3 store: bucket=%s endpoint=%s", envOrDefault("S3_BUCKET", "cognitiveos-registry"), s3Endpoint)
+		var err error
+		st, err = store.NewS3Store(store.S3Config{
+			Endpoint:  s3Endpoint,
+			Bucket:    envOrDefault("S3_BUCKET", "cognitiveos-registry"),
+			AccessKey: os.Getenv("S3_ACCESS_KEY"),
+			SecretKey: os.Getenv("S3_SECRET_KEY"),
+			Region:    envOrDefault("S3_REGION", "auto"),
+		})
+		if err != nil {
+			log.Fatalf("Failed to create S3 store: %v", err)
+		}
+	} else if *sqlite {
 		log.Printf("Using file-backed store: %s/patches.json", dd)
 		st = store.NewFileStore(dd + "/patches.json")
 	} else {
+		log.Printf("Using in-memory store")
 		st = store.NewMemoryStore()
 	}
 

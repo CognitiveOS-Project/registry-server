@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/CognitiveOS-Project/registry-server/internal/store"
 	"github.com/CognitiveOS-Project/registry-server/internal/validate"
@@ -165,29 +166,50 @@ func (s *Server) handleDownload() http.HandlerFunc {
 			return
 		}
 
-		if pkg.DownloadURL == "" {
+		var downloadURL string
+
+		osParam := r.URL.Query().Get("os")
+		archParam := r.URL.Query().Get("arch")
+
+		if osParam != "" && archParam != "" && pkg.DownloadURLs != nil {
+			variant := osParam + "/" + archParam
+			downloadURL = pkg.DownloadURLs[variant]
+		}
+
+		if downloadURL == "" && pkg.DownloadURLs != nil {
+			downloadURL = pkg.DownloadURLs[""]
+		}
+
+		if downloadURL == "" {
+			downloadURL = pkg.DownloadURL
+		}
+
+		if downloadURL == "" {
 			writeErrorJSON(w, http.StatusNotFound, "NOT_FOUND",
 				"no download URL registered for this package")
 			return
 		}
 
 		_, _ = s.config.Store.IncrementDownloads(name, version)
-		http.Redirect(w, r, pkg.DownloadURL, http.StatusFound)
+		http.Redirect(w, r, downloadURL, http.StatusFound)
 	}
 }
 
 type publishRequest struct {
-	Name             string          `json:"name"`
-	Version          string          `json:"version"`
-	Description      string          `json:"description,omitempty"`
-	Author           string          `json:"author,omitempty"`
-	License          string          `json:"license,omitempty"`
-	SourceRepository string          `json:"source_repository,omitempty"`
-	SourceIssues     string          `json:"source_issues,omitempty"`
-	DownloadURL      string          `json:"download_url"`
-	SHA256           string          `json:"sha256"`
-	Tags             []string        `json:"tags,omitempty"`
-	Manifest         json.RawMessage `json:"manifest"`
+	Name             string            `json:"name"`
+	Version          string            `json:"version"`
+	Description      string            `json:"description,omitempty"`
+	Author           string            `json:"author,omitempty"`
+	License          string            `json:"license,omitempty"`
+	SourceRepository string            `json:"source_repository,omitempty"`
+	SourceIssues     string            `json:"source_issues,omitempty"`
+	DownloadURL      string            `json:"download_url,omitempty"`           // v1 compat
+	DownloadURLs     map[string]string `json:"download_urls,omitempty"`          // v2: variant-keyed
+	SHA256           string            `json:"sha256"`
+	Tags             []string          `json:"tags,omitempty"`
+	Capabilities     []string          `json:"capabilities,omitempty"`
+	Manifest         json.RawMessage   `json:"manifest"`
+	Hardware         *store.HardwareReqs `json:"hardware_requirements,omitempty"`
 }
 
 func (s *Server) handlePublish() http.HandlerFunc {
@@ -218,9 +240,9 @@ func (s *Server) publishPackage(urlPath string, w http.ResponseWriter, r *http.R
 		return
 	}
 
-	if req.DownloadURL == "" {
+	if len(req.DownloadURLs) == 0 && req.DownloadURL == "" {
 		writeErrorJSON(w, http.StatusBadRequest, "VALIDATION_FAILED",
-			"download_url is required (notary registry does not host files)")
+			"download_urls is required (notary registry does not host files)")
 		return
 	}
 
@@ -291,6 +313,11 @@ func (s *Server) publishPackage(urlPath string, w http.ResponseWriter, r *http.R
 		}
 	}
 
+	downloadURLs := req.DownloadURLs
+	if downloadURLs == nil {
+		downloadURLs = map[string]string{"": req.DownloadURL}
+	}
+
 	pkg := store.Package{
 		Name:             req.Name,
 		Version:          req.Version,
@@ -300,9 +327,12 @@ func (s *Server) publishPackage(urlPath string, w http.ResponseWriter, r *http.R
 		SourceRepository: req.SourceRepository,
 		SourceIssues:     req.SourceIssues,
 		DownloadURL:      req.DownloadURL,
+		DownloadURLs:     downloadURLs,
 		ChecksumSHA256:   req.SHA256,
 		Tags:             req.Tags,
+		Capabilities:     req.Capabilities,
 		Manifest:         string(req.Manifest),
+		Hardware:         req.Hardware,
 	}
 
 	if err := s.config.Store.Put(pkg); err != nil {
@@ -314,8 +344,8 @@ func (s *Server) publishPackage(urlPath string, w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
 		"name":           req.Name,
 		"version":        req.Version,
-		"checksum_sha256": pkg.ChecksumSHA256,
-		"download_url":   pkg.DownloadURL,
+		"sha256":         pkg.ChecksumSHA256,
+		"download_urls":  pkg.DownloadURLs,
 		"url":            fmt.Sprintf("/v1/patches/%s/%s", req.Name, req.Version),
 	})
 }
@@ -511,6 +541,85 @@ func (s *Server) handleUnlock() http.HandlerFunc {
 			"name":    name,
 			"version": version,
 			"message": "model unlocked successfully",
+		})
+	}
+}
+
+func (s *Server) handleAuthRegister() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeErrorJSON(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED",
+				"POST required")
+			return
+		}
+
+		var req struct {
+			PublicKey string `json:"public_key"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeErrorJSON(w, http.StatusBadRequest, "VALIDATION_FAILED",
+				"invalid JSON: "+err.Error())
+			return
+		}
+
+		if req.PublicKey == "" {
+			writeErrorJSON(w, http.StatusBadRequest, "VALIDATION_FAILED",
+				"public_key is required")
+			return
+		}
+
+		info, err := s.config.SSHKeys.Register(req.PublicKey)
+		if err != nil {
+			writeErrorJSON(w, http.StatusBadRequest, "VALIDATION_FAILED",
+				"invalid public key: "+err.Error())
+			return
+		}
+
+		writeJSON(w, http.StatusCreated, map[string]interface{}{
+			"fingerprint":    info.Fingerprint,
+			"public_key_type": info.KeyType,
+			"comment":        info.Comment,
+			"registered_at":  info.Registered.Format(time.RFC3339),
+		})
+	}
+}
+
+func (s *Server) handleNotaryCheck() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		source := r.URL.Query().Get("source")
+		path := r.URL.Query().Get("path")
+		version := r.URL.Query().Get("version")
+
+		if source == "" || path == "" || version == "" {
+			writeErrorJSON(w, http.StatusBadRequest, "VALIDATION_FAILED",
+				"source, path, and version are required")
+			return
+		}
+
+		name := path
+		pkg, err := s.config.Store.Get(name, version)
+		if err != nil {
+			writeErrorJSON(w, http.StatusNotFound, "NOT_FOUND",
+				fmt.Sprintf("package '%s' version '%s' not found", name, version))
+			return
+		}
+
+		variant := ""
+		if osParam := r.URL.Query().Get("os"); osParam != "" {
+			if archParam := r.URL.Query().Get("arch"); archParam != "" {
+				variant = osParam + "/" + archParam
+			}
+		}
+
+		storedHash := pkg.ChecksumSHA256
+
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"verified":    true,
+			"name":        pkg.Name,
+			"version":     pkg.Version,
+			"variant":     variant,
+			"stored_hash": storedHash,
+			"checked_at":  time.Now().UTC().Format(time.RFC3339),
 		})
 	}
 }

@@ -10,22 +10,32 @@ import (
 )
 
 type Package struct {
-	Name             string   `json:"name"`
-	Version          string   `json:"version"`
-	Description      string   `json:"description,omitempty"`
-	Author           string   `json:"author,omitempty"`
-	License          string   `json:"license,omitempty"`
-	SourceRepository string   `json:"source_repository,omitempty"`
-	SourceIssues     string   `json:"source_issues,omitempty"`
-	DownloadURL      string   `json:"download_url,omitempty"`
-	Size             int64    `json:"size,omitempty"`
-	ChecksumSHA256   string   `json:"checksum_sha256,omitempty"`
-	Status           string   `json:"status,omitempty"`
-	Downloads        int64    `json:"downloads,omitempty"`
-	CreatedAt        string   `json:"created_at,omitempty"`
-	UpdatedAt        string   `json:"updated_at,omitempty"`
-	Tags             []string `json:"tags,omitempty"`
-	Manifest         string   `json:"manifest,omitempty"`
+	Name             string            `json:"name"`
+	Version          string            `json:"version"`
+	Description      string            `json:"description,omitempty"`
+	Author           string            `json:"author,omitempty"`
+	License          string            `json:"license,omitempty"`
+	SourceRepository string            `json:"source_repository,omitempty"`
+	SourceIssues     string            `json:"source_issues,omitempty"`
+	DownloadURL      string            `json:"download_url,omitempty"`           // v1 compat (deprecated)
+	DownloadURLs     map[string]string `json:"download_urls,omitempty"`          // v2: variant-keyed URLs
+	Size             int64             `json:"size,omitempty"`
+	ChecksumSHA256   string            `json:"checksum_sha256,omitempty"`
+	Status           string            `json:"status,omitempty"`
+	Downloads        int64             `json:"downloads,omitempty"`
+	CreatedAt        string            `json:"created_at,omitempty"`
+	UpdatedAt        string            `json:"updated_at,omitempty"`
+	Tags             []string          `json:"tags,omitempty"`
+	Capabilities     []string          `json:"capabilities,omitempty"`
+	Manifest         string            `json:"manifest,omitempty"`
+	Publisher        string            `json:"publisher_fingerprint,omitempty"`
+	Hardware         *HardwareReqs     `json:"hardware_requirements,omitempty"`
+}
+
+type HardwareReqs struct {
+	MinRAMMB     int  `json:"min_ram_mb,omitempty"`
+	MinStorageMB int  `json:"min_storage_mb,omitempty"`
+	NPURequired  bool `json:"npu_required,omitempty"`
 }
 
 type SearchOptions struct {
