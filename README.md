@@ -79,6 +79,8 @@ make clean    # Remove build artifacts
 
 ## Docker
 
+### Application Image
+
 ```bash
 docker build -t registry-server .
 docker run -p 8080:8080 registry-server
@@ -87,6 +89,30 @@ docker run -p 8080:8080 registry-server
 The Dockerfile uses a multi-stage build:
 - **Build stage:** `golang:1.25` with `CGO_ENABLED=0` for a static binary
 - **Runtime stage:** `gcr.io/distroless/static-debian12` (~10 MB image)
+
+### Setup Image (gcloud CLI)
+
+For running setup scripts in a containerized environment:
+
+```bash
+docker build -f Dockerfile-gcloud -t registry-setup .
+docker run -it registry-setup
+```
+
+This image includes:
+- `google/cloud-sdk` (gcloud, gsutil)
+- Setup scripts from `scripts/`
+- No local gcloud installation required
+
+Use this to run setup scripts without installing the gcloud CLI locally:
+
+```bash
+# Run GCP project setup
+docker run -it registry-setup scripts/google-cloud/setup-project.sh
+
+# Run R2 setup
+docker run -it registry-setup scripts/cloudflare/setup-r2.sh
+```
 
 ## Deployment
 
