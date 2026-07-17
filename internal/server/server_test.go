@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -48,10 +49,16 @@ func setupTestServer(t *testing.T) (*Server, string) {
 	return New(cfg), dataDir
 }
 
+func testNewRequest(method, path string, body io.Reader) *http.Request {
+	r := httptest.NewRequest(method, path, body)
+	r.Header.Set("User-Agent", "cpm/test")
+	return r
+}
+
 func TestHealth(t *testing.T) {
 	srv, _ := setupTestServer(t)
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/v1/health", nil)
+	r := testNewRequest("GET", "/v1/health", nil)
 	srv.ServeHTTP(w, r)
 
 	if w.Code != http.StatusOK {
@@ -68,7 +75,7 @@ func TestHealth(t *testing.T) {
 func TestSearch(t *testing.T) {
 	srv, _ := setupTestServer(t)
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/v1/search?q=test", nil)
+	r := testNewRequest("GET", "/v1/search?q=test", nil)
 	srv.ServeHTTP(w, r)
 
 	if w.Code != http.StatusOK {
@@ -102,7 +109,7 @@ func TestSearch(t *testing.T) {
 func TestSearchNoQuery(t *testing.T) {
 	srv, _ := setupTestServer(t)
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/v1/search", nil)
+	r := testNewRequest("GET", "/v1/search", nil)
 	srv.ServeHTTP(w, r)
 
 	if w.Code != http.StatusOK {
@@ -125,7 +132,7 @@ func TestSearchNoQuery(t *testing.T) {
 func TestSearchPagination(t *testing.T) {
 	srv, _ := setupTestServer(t)
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/v1/search?page=1&per_page=1", nil)
+	r := testNewRequest("GET", "/v1/search?page=1&per_page=1", nil)
 	srv.ServeHTTP(w, r)
 
 	if w.Code != http.StatusOK {
@@ -153,7 +160,7 @@ func TestSearchPagination(t *testing.T) {
 func TestSearchExact(t *testing.T) {
 	srv, _ := setupTestServer(t)
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/v1/search?q=test-patch&exact=true", nil)
+	r := testNewRequest("GET", "/v1/search?q=test-patch&exact=true", nil)
 	srv.ServeHTTP(w, r)
 
 	if w.Code != http.StatusOK {
@@ -173,7 +180,7 @@ func TestSearchExact(t *testing.T) {
 func TestGetPatchByVersion(t *testing.T) {
 	srv, _ := setupTestServer(t)
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/v1/patches/test-patch/1.0.0", nil)
+	r := testNewRequest("GET", "/v1/patches/test-patch/1.0.0", nil)
 	srv.ServeHTTP(w, r)
 
 	if w.Code != http.StatusOK {
@@ -201,7 +208,7 @@ func TestGetPatchLatest(t *testing.T) {
 	})
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/v1/patches/multi-ver", nil)
+	r := testNewRequest("GET", "/v1/patches/multi-ver", nil)
 	srv.ServeHTTP(w, r)
 
 	if w.Code != http.StatusOK {
@@ -218,7 +225,7 @@ func TestGetPatchLatest(t *testing.T) {
 func TestGetPatchNotFound(t *testing.T) {
 	srv, _ := setupTestServer(t)
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/v1/patches/nonexistent/9.9.9", nil)
+	r := testNewRequest("GET", "/v1/patches/nonexistent/9.9.9", nil)
 	srv.ServeHTTP(w, r)
 
 	if w.Code != http.StatusNotFound {
@@ -229,7 +236,7 @@ func TestGetPatchNotFound(t *testing.T) {
 func TestGetPatchNotFoundLatest(t *testing.T) {
 	srv, _ := setupTestServer(t)
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/v1/patches/nonexistent", nil)
+	r := testNewRequest("GET", "/v1/patches/nonexistent", nil)
 	srv.ServeHTTP(w, r)
 
 	if w.Code != http.StatusNotFound {
@@ -240,7 +247,7 @@ func TestGetPatchNotFoundLatest(t *testing.T) {
 func TestGetVersions(t *testing.T) {
 	srv, _ := setupTestServer(t)
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/v1/patches/test-patch/versions", nil)
+	r := testNewRequest("GET", "/v1/patches/test-patch/versions", nil)
 	srv.ServeHTTP(w, r)
 
 	if w.Code != http.StatusOK {
@@ -267,7 +274,7 @@ func TestDownload(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/v1/patches/test-patch/1.0.0/download", nil)
+	r := testNewRequest("GET", "/v1/patches/test-patch/1.0.0/download", nil)
 	srv.ServeHTTP(w, r)
 
 	if w.Code != http.StatusFound {
@@ -284,7 +291,7 @@ func TestDownloadNotFound(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/v1/patches/nonexistent/9.9.9/download", nil)
+	r := testNewRequest("GET", "/v1/patches/nonexistent/9.9.9/download", nil)
 	srv.ServeHTTP(w, r)
 
 	if w.Code != http.StatusNotFound {
@@ -301,7 +308,7 @@ func TestDownloadNoURL(t *testing.T) {
 	})
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/v1/patches/no-download/1.0.0/download", nil)
+	r := testNewRequest("GET", "/v1/patches/no-download/1.0.0/download", nil)
 	srv.ServeHTTP(w, r)
 
 	if w.Code != http.StatusNotFound {
@@ -314,7 +321,7 @@ func TestPublishRequiresAuth(t *testing.T) {
 
 	body := bytes.NewBufferString(`{"name":"p","version":"1.0.0","download_url":"https://example.com/p-1.0.0.cgp","sha256":"abc123def456abc123def456abc123def456abc123def456abc123def456abc1","manifest":{"name":"p","version":"1.0.0","description":"test"}}`)
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "/v1/patches", body)
+	r := testNewRequest("POST", "/v1/patches", body)
 	r.Header.Set("Content-Type", "application/json")
 	srv.ServeHTTP(w, r)
 
@@ -339,7 +346,7 @@ func TestPublishWithAuth(t *testing.T) {
 	body, _ := json.Marshal(payload)
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "/v1/patches", bytes.NewReader(body))
+	r := testNewRequest("POST", "/v1/patches", bytes.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("Authorization", "Bearer test-token-123")
 	srv.ServeHTTP(w, r)
@@ -368,7 +375,7 @@ func TestPublishWithoutManifest(t *testing.T) {
 	body, _ := json.Marshal(payload)
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "/v1/patches", bytes.NewReader(body))
+	r := testNewRequest("POST", "/v1/patches", bytes.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("Authorization", "Bearer test-token-123")
 	srv.ServeHTTP(w, r)
@@ -394,7 +401,7 @@ func TestPublishWithManifestAndDownloadURL(t *testing.T) {
 	body, _ := json.Marshal(payload)
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "/v1/patches", bytes.NewReader(body))
+	r := testNewRequest("POST", "/v1/patches", bytes.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("Authorization", "Bearer test-token-123")
 	srv.ServeHTTP(w, r)
@@ -428,7 +435,7 @@ func TestPublishRejectsDuplicate(t *testing.T) {
 	body, _ := json.Marshal(payload)
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "/v1/patches", bytes.NewReader(body))
+	r := testNewRequest("POST", "/v1/patches", bytes.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("Authorization", "Bearer test-token-123")
 	srv.ServeHTTP(w, r)
@@ -448,7 +455,7 @@ func TestPublishRequiresDownloadURL(t *testing.T) {
 	body, _ := json.Marshal(payload)
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "/v1/patches", bytes.NewReader(body))
+	r := testNewRequest("POST", "/v1/patches", bytes.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("Authorization", "Bearer test-token-123")
 	srv.ServeHTTP(w, r)
@@ -473,7 +480,7 @@ func TestPutVersion(t *testing.T) {
 	body, _ := json.Marshal(payload)
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("PUT", "/v1/patches/test-patch/2.0.0", bytes.NewReader(body))
+	r := testNewRequest("PUT", "/v1/patches/test-patch/2.0.0", bytes.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("Authorization", "Bearer test-token-123")
 	srv.ServeHTTP(w, r)
@@ -498,7 +505,7 @@ func TestPutVersionMismatch(t *testing.T) {
 	body, _ := json.Marshal(payload)
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("PUT", "/v1/patches/test-patch/3.0.0", bytes.NewReader(body))
+	r := testNewRequest("PUT", "/v1/patches/test-patch/3.0.0", bytes.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("Authorization", "Bearer test-token-123")
 	srv.ServeHTTP(w, r)
@@ -513,7 +520,7 @@ func TestSetStatus(t *testing.T) {
 
 	body := bytes.NewBufferString(`{"status":"deprecated"}`)
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("PATCH", "/v1/patches/test-patch/1.0.0/status", body)
+	r := testNewRequest("PATCH", "/v1/patches/test-patch/1.0.0/status", body)
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("Authorization", "Bearer test-token-123")
 	srv.ServeHTTP(w, r)
@@ -534,7 +541,7 @@ func TestSetStatusRequiresAuth(t *testing.T) {
 
 	body := bytes.NewBufferString(`{"status":"deprecated"}`)
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("PATCH", "/v1/patches/test-patch/1.0.0/status", body)
+	r := testNewRequest("PATCH", "/v1/patches/test-patch/1.0.0/status", body)
 	r.Header.Set("Content-Type", "application/json")
 	srv.ServeHTTP(w, r)
 
@@ -547,7 +554,7 @@ func TestGetDependencies(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/v1/patches/test-patch/dependencies", nil)
+	r := testNewRequest("GET", "/v1/patches/test-patch/dependencies", nil)
 	srv.ServeHTTP(w, r)
 
 	if w.Code != http.StatusOK {
@@ -592,7 +599,7 @@ func TestGetDependenciesTree(t *testing.T) {
 	})
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/v1/patches/root-pkg/dependencies", nil)
+	r := testNewRequest("GET", "/v1/patches/root-pkg/dependencies", nil)
 	srv.ServeHTTP(w, r)
 
 	if w.Code != http.StatusOK {
@@ -630,7 +637,7 @@ func TestValidate(t *testing.T) {
 	})
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "/v1/patches/validatable/1.0.0/validate", nil)
+	r := testNewRequest("POST", "/v1/patches/validatable/1.0.0/validate", nil)
 	r.Header.Set("Authorization", "Bearer test-token-123")
 	srv.ServeHTTP(w, r)
 
@@ -650,7 +657,7 @@ func TestUnlock(t *testing.T) {
 
 	body := bytes.NewBufferString(`{"code":"CODE123"}`)
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "/v1/patches/test-patch/1.0.0/unlock", body)
+	r := testNewRequest("POST", "/v1/patches/test-patch/1.0.0/unlock", body)
 	r.Header.Set("Content-Type", "application/json")
 	srv.ServeHTTP(w, r)
 
@@ -676,7 +683,7 @@ func TestUnlockMissingCode(t *testing.T) {
 
 	body := bytes.NewBufferString(`{"code":""}`)
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "/v1/patches/test-patch/1.0.0/unlock", body)
+	r := testNewRequest("POST", "/v1/patches/test-patch/1.0.0/unlock", body)
 	r.Header.Set("Content-Type", "application/json")
 	srv.ServeHTTP(w, r)
 
@@ -689,7 +696,7 @@ func TestCORSHeaders(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("OPTIONS", "/v1/health", nil)
+	r := testNewRequest("OPTIONS", "/v1/health", nil)
 	srv.ServeHTTP(w, r)
 
 	if w.Code != http.StatusNoContent {
@@ -707,7 +714,7 @@ func TestPublishRequiresPublishScope(t *testing.T) {
 
 	body := bytes.NewBufferString(`{"name":"x","version":"1.0.0","download_url":"https://example.com/x.cgp","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","manifest":{"name":"x","version":"1.0.0","description":"test"}}`)
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "/v1/patches", body)
+	r := testNewRequest("POST", "/v1/patches", body)
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("Authorization", "Bearer readonly-token")
 	srv.ServeHTTP(w, r)
@@ -732,7 +739,7 @@ func TestDependencyValidation(t *testing.T) {
 	body, _ := json.Marshal(payload)
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "/v1/patches", bytes.NewReader(body))
+	r := testNewRequest("POST", "/v1/patches", bytes.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("Authorization", "Bearer test-token-123")
 	srv.ServeHTTP(w, r)
@@ -757,7 +764,7 @@ func TestDependencyValidationMissingDep(t *testing.T) {
 	body, _ := json.Marshal(payload)
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "/v1/patches", bytes.NewReader(body))
+	r := testNewRequest("POST", "/v1/patches", bytes.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("Authorization", "Bearer test-token-123")
 	srv.ServeHTTP(w, r)

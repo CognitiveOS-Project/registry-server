@@ -16,25 +16,33 @@ import (
 )
 
 func main() {
-	addr := flag.String("addr", ":8080", "listen address")
-	dataDir := flag.String("data-dir", "./data", "data directory for persistent store")
-	sqlite := flag.Bool("sqlite", false, "use SQLite backend (default: memory)")
+	addr := flag.String("addr", "", "listen address (overrides PORT env)")
+	dataDir := flag.String("data-dir", "", "data directory (overrides DATA_DIR env)")
+	sqlite := flag.Bool("sqlite", false, "use file-backed store (default: memory)")
 	flag.Parse()
+
+	port := envOrDefault("PORT", "8080")
+	if *addr == "" {
+		*addr = ":" + port
+	}
+	dd := envOrDefault("DATA_DIR", "./data")
+	if *dataDir != "" {
+		dd = *dataDir
+	}
 
 	var st store.Store
 	if *sqlite {
-		log.Printf("Using file-backed store: %s", *dataDir+"/patches.json")
-		st = store.NewFileStore(*dataDir + "/patches.json")
+		log.Printf("Using file-backed store: %s/patches.json", dd)
+		st = store.NewFileStore(dd + "/patches.json")
 	} else {
 		st = store.NewMemoryStore()
 	}
 
 	tokenStore := auth.NewMemoryTokenStore()
-	_ = tokenStore.Add("test-token", "publish", "admin")
 
 	cfg := server.Config{
 		Addr:      *addr,
-		DataDir:   *dataDir,
+		DataDir:   dd,
 		Store:     st,
 		TokenAuth: tokenStore,
 	}
@@ -42,8 +50,13 @@ func main() {
 	srv := server.New(cfg)
 
 	httpServer := &http.Server{
-		Addr:    *addr,
-		Handler: srv,
+		Addr:              *addr,
+		Handler:           srv,
+		ReadTimeout:       10 * time.Second,
+		ReadHeaderTimeout: 5 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    1 << 20, // 1 MB
 	}
 
 	go func() {
@@ -67,4 +80,11 @@ func main() {
 	}
 
 	log.Println("Server stopped")
+}
+
+func envOrDefault(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
 }
