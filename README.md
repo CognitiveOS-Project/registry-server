@@ -119,7 +119,7 @@ docker run -it registry-setup scripts/cloudflare/setup-r2.sh
 For Cloudflare R2 setup without local rclone installation:
 
 ```bash
-docker build -f Dockerfile-rclone -t registry-rclone-setup .
+docker build -f Dockerfile-cloudflare -t registry-rclone-setup .
 docker run -it registry-rclone-setup
 ```
 
