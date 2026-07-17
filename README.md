@@ -71,7 +71,7 @@ Environment variables:
 | `S3_ACCESS_KEY` | — | S3 access key ID |
 | `S3_SECRET_KEY` | — | S3 secret access key |
 | `S3_REGION` | `auto` | S3 region |
-| `BASE_DOMAIN` | `registry.cognitive-os.org` | Base domain for URLs |
+| `BASE_DOMAIN` | `cognitive-os.org` | Base domain for URLs |
 
 Command-line flags override env vars:
 
@@ -171,7 +171,7 @@ Go to [github.com/CognitiveOS-Project/registry-server](https://github.com/Cognit
 |--------|--------|-------------|
 | `GCP_PROJECT_ID` | GCP Console | Google Cloud project ID |
 | `GCP_SA_KEY` | `cat /tmp/registry-deployer-key.json` | Service account JSON key |
-| `BASE_DOMAIN` | Configurable | Base domain (default: `registry.cognitive-os.org`) |
+| `BASE_DOMAIN` | Configurable | Base domain (default: `cognitive-os.org`) |
 | `R2_ENDPOINT` | Cloudflare R2 dashboard | `https://<account-id>.r2.cloudflarestorage.com` |
 | `R2_BUCKET` | Cloudflare R2 dashboard | R2 bucket name (default: `cognitiveos-registry`) |
 | `R2_ACCESS_KEY` | Cloudflare R2 API tokens | Access Key ID |
