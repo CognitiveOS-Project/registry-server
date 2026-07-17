@@ -67,10 +67,6 @@ func ExtractBearerToken(r *http.Request) string {
 	return strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
 }
 
-type contextKey string
-
-const tokenContextKey contextKey = "auth_token"
-
 func RequireAuth(ts TokenStore, requiredScopes ...string) func(http.HandlerFunc) http.HandlerFunc {
 	return func(next http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {

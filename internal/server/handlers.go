@@ -171,7 +171,7 @@ func (s *Server) handleDownload() http.HandlerFunc {
 			return
 		}
 
-		s.config.Store.IncrementDownloads(name, version)
+		_, _ = s.config.Store.IncrementDownloads(name, version)
 		http.Redirect(w, r, pkg.DownloadURL, http.StatusFound)
 	}
 }
