@@ -1,5 +1,7 @@
 FROM rclone/rclone:latest
 
+RUN apk add --no-cache bash
+
 WORKDIR /app
 
 COPY scripts/cloudflare/ ./scripts/cloudflare/
