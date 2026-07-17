@@ -3,7 +3,6 @@ FROM google/cloud-sdk:latest
 WORKDIR /app
 
 COPY scripts/ ./scripts/
-COPY .github/workflows/deploy-cloud-run.yml ./.github/workflows/
 
 RUN chmod +x scripts/**/*.sh
 
