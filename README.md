@@ -76,7 +76,7 @@ Environment variables:
 Command-line flags override env vars:
 
 ```bash
-./registry-server -addr :9090 -data-dir /var/data -sqlite
+./registry-server -addr :9090 -data-dir /var/data
 ```
 
 ## Build
