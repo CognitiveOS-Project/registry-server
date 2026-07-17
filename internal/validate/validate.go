@@ -114,7 +114,7 @@ func Run(manifestRaw json.RawMessage, archive io.Reader, sha256 string) Result {
 		return res
 	}
 	for _, c := range sha256 {
-		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
 			res.Errors = append(res.Errors, RuleError{Rule: "A3", Message: "sha256 must be lowercase hex"})
 			return res
 		}
