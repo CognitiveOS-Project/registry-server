@@ -65,6 +65,11 @@ gcloud projects add-iam-policy-binding "$PROJECT_ID" \
     --role="roles/storage.admin" \
     --quiet
 
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+    --member="serviceAccount:$SA_EMAIL" \
+    --role="roles/artifactregistry.writer" \
+    --quiet
+
 echo "Roles granted."
 
 # Generate JSON key
