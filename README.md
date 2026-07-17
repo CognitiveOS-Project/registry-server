@@ -35,6 +35,7 @@ make build
 - [CognitiveOS](https://github.com/CognitiveOS-Project/cognitiveos) — main project repository
 - [cognitive-os.org](https://cognitive-os.org) — project website
 - [cpm](https://github.com/CognitiveOS-Project/cpm) — CLI client that searches and downloads from this registry
+- [coginit](https://github.com/CognitiveOS-Project/coginit) — boot manager that orchestrates CognitiveOS services
 - [Product Specs](https://github.com/CognitiveOS-Project/product-specs) — registry API specification
 - [CognitiveOS Project](https://github.com/CognitiveOS-Project) — GitHub organization
 
