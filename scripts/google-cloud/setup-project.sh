@@ -77,7 +77,7 @@ gcloud iam service-accounts keys create "$KEY_FILE" \
 echo ""
 echo "=== Setup Complete ==="
 echo ""
-echo "Add these GitHub secrets to CognitiveOS-Project/registry-server:"
+echo "Add these GitHub secrets to your registry-server repository:"
 echo ""
 echo "  GCP_PROJECT_ID = $PROJECT_ID"
 echo "  GCP_SA_KEY     = (contents of $KEY_FILE)"
