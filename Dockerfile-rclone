@@ -1,0 +1,9 @@
+FROM rclone/rclone:latest
+
+WORKDIR /app
+
+COPY scripts/cloudflare/ ./scripts/cloudflare/
+
+RUN chmod +x scripts/cloudflare/*.sh
+
+ENTRYPOINT ["scripts/cloudflare/setup-r2.sh"]

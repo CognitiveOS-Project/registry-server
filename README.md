@@ -114,6 +114,24 @@ docker run -it registry-setup scripts/google-cloud/setup-project.sh
 docker run -it registry-setup scripts/cloudflare/setup-r2.sh
 ```
 
+### Setup Image (rclone)
+
+For Cloudflare R2 setup without local rclone installation:
+
+```bash
+docker build -f Dockerfile-rclone -t registry-rclone-setup .
+docker run -it registry-rclone-setup
+```
+
+This image includes:
+- `rclone` (S3-compatible storage tool)
+- Cloudflare R2 setup scripts
+
+```bash
+# Run R2 setup
+docker run -it registry-rclone-setup scripts/cloudflare/setup-r2.sh
+```
+
 ## Deployment
 
 ### Google Cloud Run (Primary)
