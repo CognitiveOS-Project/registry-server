@@ -59,10 +59,17 @@ When Cloudflare proxies a CNAME to `*.run.app`, it sends the custom domain as th
 
 1. **`domains.cloudrun.com` API** must be enabled:
    ```bash
-   gcloud services enable domains.cloudrun.com
+   gcloud services enable domains.cloudrun.com --project=PROJECT_ID
    ```
+   If this fails with `SERVICE_CONFIG_NOT_FOUND_OR_PERMISSION_DENIED`, try enabling it via the GCP Console UI → APIs & Services → Enable APIs → search "Cloud Run Domain Mapping".
 
-2. **Service account** needs `roles/run.admin` and `roles/iam.serviceAccountUser`.
+2. **`gcloud beta`** is required — the `--region` flag is only available in alpha/beta tracks:
+   ```bash
+   gcloud beta run domain-mappings create ...
+   ```
+   If `gcloud beta` is not installed: `gcloud components install beta`
+
+3. **Service account** needs `roles/run.admin` and `roles/iam.serviceAccountUser`.
 
 ### Create the Mapping
 
