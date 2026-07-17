@@ -13,16 +13,19 @@ CognitiveOS `.cgp` package registry — a Go HTTP server for hosting, searching,
 | GET | `/v1/patches/:name/:version` | Get specific version |
 | GET | `/v1/patches/:name/:version/download` | Download .cgp archive |
 | GET | `/v1/patches/:name/dependencies` | Get dependency graph |
+| GET | `/v1/notary/check` | Check notary checksum |
+| POST | `/v1/auth/register` | Register SSH public key |
 | POST | `/v1/patches` | Publish new patch |
 | PUT | `/v1/patches/:name/:version` | Publish new version |
 | PATCH | `/v1/patches/:name/:version/status` | Set version status (admin) |
 | POST | `/v1/patches/:name/:version/validate` | Validate checksum (admin) |
-| POST | `/v1/patches/:name/:version/:code/unlock` | Unlock paid/supporter patch |
+| POST | `/v1/patches/:name/:version/unlock` | Unlock paid/supporter patch |
 
 ## Authentication
 
 - **Public:** Read access for search, metadata, and download
-- **Token-based:** Publishing requires a valid token
+- **Token-based:** Publishing requires a valid token (legacy, still active)
+- **SSH key-based:** Publishers register SSH public keys via `/v1/auth/register`; signatures verified via SSHSIG protocol
 - **Code unlock:** Paid/supporter-only patches use unlock codes
 
 ## Rate Limiting
@@ -33,8 +36,10 @@ All endpoints are rate-limited per IP. Limits are intentionally restrictive:
 |----------|-------|
 | Read (search, metadata) | 10 req/min |
 | Download | 5 req/min |
+| Notary check | 5 req/min |
 | Publish | 2 req/min |
 | Unlock | 2 req/min |
+| Auth register | 1 req/min |
 | Healthcheck | exempt |
 | **Global** | **30 req/min** |
 
@@ -61,6 +66,12 @@ Environment variables:
 |----------|---------|-------------|
 | `PORT` | `8080` | Listen port |
 | `DATA_DIR` | `./data` | Data directory for patches and metadata |
+| `S3_ENDPOINT` | — | S3-compatible endpoint (Cloudflare R2, MinIO, etc.) |
+| `S3_BUCKET` | `cognitiveos-registry` | S3 bucket name |
+| `S3_ACCESS_KEY` | — | S3 access key ID |
+| `S3_SECRET_KEY` | — | S3 secret access key |
+| `S3_REGION` | `auto` | S3 region |
+| `BASE_DOMAIN` | `cognitive-os.org` | Base domain for URLs |
 
 Command-line flags override env vars:
 
@@ -90,47 +101,31 @@ The Dockerfile uses a multi-stage build:
 - **Build stage:** `golang:1.25` with `CGO_ENABLED=0` for a static binary
 - **Runtime stage:** `gcr.io/distroless/static-debian12` (~10 MB image)
 
-### Setup Image (gcloud CLI)
+### Setup Image (GCP)
 
-For running setup scripts in a containerized environment:
+For running Google Cloud setup scripts in a containerized environment:
 
 ```bash
-docker build -f Dockerfile-gcloud -t registry-setup .
-docker run -it registry-setup
+docker build -f Dockerfile-gcloud -t registry-gcloud-setup .
+docker run -it registry-gcloud-setup scripts/google-cloud/setup-project.sh
 ```
 
 This image includes:
 - `google/cloud-sdk` (gcloud, gsutil)
-- Setup scripts from `scripts/`
-- No local gcloud installation required
+- `scripts/google-cloud/` (GCP project + service account setup)
 
-Use this to run setup scripts without installing the gcloud CLI locally:
-
-```bash
-# Run GCP project setup
-docker run -it registry-setup scripts/google-cloud/setup-project.sh
-
-# Run R2 setup
-docker run -it registry-setup scripts/cloudflare/setup-r2.sh
-```
-
-### Setup Image (rclone)
+### Setup Image (Cloudflare)
 
 For Cloudflare R2 setup without local rclone installation:
 
 ```bash
 docker build -f Dockerfile-cloudflare -t registry-cloudflare-setup .
-docker run -it registry-cloudflare-setup
+docker run -it registry-cloudflare-setup scripts/cloudflare/setup-r2.sh
 ```
 
 This image includes:
 - `rclone` (S3-compatible storage tool)
-- Cloudflare R2 setup scripts
-
-```bash
-# Run R2 setup
-docker run -it registry-cloudflare-setup scripts/cloudflare/setup-r2.sh
-```
+- `scripts/cloudflare/` (R2 bucket + API token setup)
 
 ## Deployment
 
@@ -162,7 +157,7 @@ The script will:
 ```
 
 The script will:
-1. Guide you to create an R2 bucket (`cognitiveos-registry`)
+1. Guide you to create an R2 bucket (prompted for name, default: `cognitiveos-registry`)
 2. Configure public access for notary metadata
 3. Create an API token with Object Read & Write
 4. Ask for your R2 Account ID
@@ -178,7 +173,7 @@ Go to [github.com/CognitiveOS-Project/registry-server](https://github.com/Cognit
 | `GCP_SA_KEY` | `cat /tmp/registry-deployer-key.json` | Service account JSON key |
 | `BASE_DOMAIN` | Configurable | Base domain (default: `cognitive-os.org`) |
 | `R2_ENDPOINT` | Cloudflare R2 dashboard | `https://<account-id>.r2.cloudflarestorage.com` |
-| `R2_BUCKET` | Cloudflare R2 dashboard | `cognitiveos-registry` |
+| `R2_BUCKET` | Cloudflare R2 dashboard | R2 bucket name (default: `cognitiveos-registry`) |
 | `R2_ACCESS_KEY` | Cloudflare R2 API tokens | Access Key ID |
 | `R2_SECRET_KEY` | Cloudflare R2 API tokens | Secret Access Key |
 
@@ -214,14 +209,14 @@ Free tier: 240,000 vCPU-seconds and 450,000 GiB-seconds per month.
 
 ```bash
 make build
-./build/bin/registry-server -sqlite -data-dir ./data
+./build/bin/registry-server -data-dir ./data
 ```
 
 ## Storage
 
 - In-memory store (default)
 - File-backed store with `-sqlite` flag (writes to `DATA_DIR/patches.json`)
-- S3-compatible store via env vars (`S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_REGION`)
+- S3-compatible store via `S3_*` env vars (Cloudflare R2 default)
 
 ## Middleware Chain
 
@@ -229,7 +224,7 @@ make build
 Request → CORS → AntiBot → RateLimit → Auth (per-route) → Handler
 ```
 
-## Storage (Implemented)
+## Architecture
 
 - S3-compatible interface (Cloudflare R2 default, configurable via `S3_*` env vars)
 - SSH public key authentication for publishers (SSHSIG protocol)
