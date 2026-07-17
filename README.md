@@ -94,26 +94,65 @@ The Dockerfile uses a multi-stage build:
 
 Deployment is automated via GitHub Actions. Push to `main` triggers `deploy-cloud-run.yml`.
 
-**Setup scripts:**
+#### Step 1: Google Cloud Setup
 
 ```bash
-./scripts/google-cloud/setup-project.sh   # Create GCP project + service account
-./scripts/cloudflare/setup-r2.sh           # Create R2 bucket + API token
+# Requires: gcloud CLI installed and authenticated
+# See: https://cloud.google.com/sdk/docs/install
+./scripts/google-cloud/setup-project.sh
 ```
 
-**GitHub Secrets** (required for CI/CD):
+The script will:
+1. Prompt for your GCP project ID (or use current)
+2. Enable Cloud Run, Container Registry, and Cloud Build APIs
+3. Create a `registry-deployer` service account
+4. Grant `roles/run.admin` and `roles/storage.admin`
+5. Generate a JSON key at `/tmp/registry-deployer-key.json`
+6. Print the secrets to add to GitHub
+
+#### Step 2: Cloudflare R2 Setup
+
+```bash
+# Interactive — guides you through Cloudflare dashboard steps
+./scripts/cloudflare/setup-r2.sh
+```
+
+The script will:
+1. Guide you to create an R2 bucket (`cognitiveos-registry`)
+2. Configure public access for notary metadata
+3. Create an API token with Object Read & Write
+4. Ask for your R2 Account ID
+5. Print the secrets to add to GitHub
+
+#### Step 3: Add GitHub Secrets
+
+Go to [github.com/CognitiveOS-Project/registry-server](https://github.com/CognitiveOS-Project/registry-server) → Settings → Secrets and variables → Actions → New repository secret.
 
 | Secret | Source | Description |
 |--------|--------|-------------|
 | `GCP_PROJECT_ID` | GCP Console | Google Cloud project ID |
-| `GCP_SA_KEY` | GCP IAM → Service Accounts → JSON key | Deploy authentication |
+| `GCP_SA_KEY` | `cat /tmp/registry-deployer-key.json` | Service account JSON key |
 | `BASE_DOMAIN` | Configurable | Base domain (default: `cognitive-os.org`) |
-| `R2_ENDPOINT` | Cloudflare R2 dashboard | S3-compatible endpoint (`https://<account-id>.r2.cloudflarestorage.com`) |
-| `R2_BUCKET` | Cloudflare R2 dashboard | Bucket name (`cognitiveos-registry`) |
-| `R2_ACCESS_KEY` | Cloudflare R2 API tokens | S3 access key |
-| `R2_SECRET_KEY` | Cloudflare R2 API tokens | S3 secret key |
+| `R2_ENDPOINT` | Cloudflare R2 dashboard | `https://<account-id>.r2.cloudflarestorage.com` |
+| `R2_BUCKET` | Cloudflare R2 dashboard | `cognitiveos-registry` |
+| `R2_ACCESS_KEY` | Cloudflare R2 API tokens | Access Key ID |
+| `R2_SECRET_KEY` | Cloudflare R2 API tokens | Secret Access Key |
 
-**Manual deploy:**
+**Clean up the local key file after adding to GitHub:**
+
+```bash
+rm /tmp/registry-deployer-key.json
+```
+
+#### Step 4: Deploy
+
+Push to `main` triggers automatic deployment:
+
+```bash
+git push origin main
+```
+
+Or deploy manually:
 
 ```bash
 gcloud run deploy registry-server \
