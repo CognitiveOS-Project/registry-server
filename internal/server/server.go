@@ -53,8 +53,8 @@ func New(config Config) *Server {
 }
 
 func (s *Server) routes() {
-	publishAuth := auth.RequireAuth(s.config.TokenAuth, "publish")
-	adminAuth := auth.RequireAuth(s.config.TokenAuth, "admin")
+	publishAuth := auth.RequirePublishAuth(s.config.TokenAuth, s.config.SSHKeys, "publish")
+	adminAuth := auth.RequirePublishAuth(s.config.TokenAuth, s.config.SSHKeys, "admin")
 
 	s.mux.HandleFunc("GET /v1/health", s.handleHealth())
 	s.mux.HandleFunc("GET /v1/search", s.handleSearch())

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -53,12 +54,29 @@ func main() {
 	}
 
 	tokenStore := auth.NewMemoryTokenStore()
+	sshKeys := auth.NewMemorySSHKeyStore()
+
+	if trustedKeys := os.Getenv("SSH_TRUSTED_KEYS"); trustedKeys != "" {
+		for _, pubKey := range strings.Split(trustedKeys, ",") {
+			pubKey = strings.TrimSpace(pubKey)
+			if pubKey == "" {
+				continue
+			}
+			info, err := sshKeys.Register(pubKey)
+			if err != nil {
+				log.Printf("Warning: failed to register trusted key: %v", err)
+				continue
+			}
+			log.Printf("Auth: loaded trusted key %s (%s)", info.Fingerprint, info.Comment)
+		}
+	}
 
 	cfg := server.Config{
 		Addr:      *addr,
 		DataDir:   dd,
 		Store:     st,
 		TokenAuth: tokenStore,
+		SSHKeys:   sshKeys,
 	}
 
 	srv := server.New(cfg)
