@@ -296,7 +296,7 @@ func (s *Server) publishOfficial(urlPath string, w http.ResponseWriter, r *http.
 		return
 	}
 
-	if cgpData == nil || len(cgpData) == 0 {
+	if len(cgpData) == 0 {
 		writeErrorJSON(w, http.StatusBadRequest, "VALIDATION_FAILED",
 			"cgp field is required for official publish")
 		return
