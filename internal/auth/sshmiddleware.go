@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
+	"mime/multipart"
 	"net/http"
 	"strings"
 )
@@ -32,20 +34,13 @@ func RequireSSHAuth(sshKeys SSHKeyStore, requiredScopes ...string) func(http.Han
 
 			r.Body = io.NopCloser(bytes.NewReader(body))
 
-			var payload struct {
-				Manifest json.RawMessage `json:"manifest"`
-			}
-			if err := json.Unmarshal(body, &payload); err != nil {
-				writeError(w, http.StatusBadRequest, "VALIDATION_FAILED", "invalid JSON body")
+			manifestBytes, err := extractManifestBytes(body, r.Header.Get("Content-Type"))
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "VALIDATION_FAILED", err.Error())
 				return
 			}
 
-			if payload.Manifest == nil || string(payload.Manifest) == "null" || string(payload.Manifest) == "" {
-				writeError(w, http.StatusBadRequest, "VALIDATION_FAILED", "manifest field is required for SSH-signed requests")
-				return
-			}
-
-			hash := sha256.Sum256(payload.Manifest)
+			hash := sha256.Sum256(manifestBytes)
 
 			if err := sshKeys.VerifySignature(fingerprint, signature, hash[:]); err != nil {
 				writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", fmt.Sprintf("invalid signature: %v", err))
@@ -71,6 +66,52 @@ func RequireSSHAuth(sshKeys SSHKeyStore, requiredScopes ...string) func(http.Han
 			}
 
 			next(w, r)
+		}
+	}
+}
+
+func extractManifestBytes(body []byte, contentType string) ([]byte, error) {
+	if strings.Contains(contentType, "multipart/form-data") {
+		return extractManifestFromMultipart(body, contentType)
+	}
+	return extractManifestFromJSON(body)
+}
+
+func extractManifestFromJSON(body []byte) ([]byte, error) {
+	var payload struct {
+		Manifest json.RawMessage `json:"manifest"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, fmt.Errorf("invalid JSON body")
+	}
+	if payload.Manifest == nil || string(payload.Manifest) == "null" || string(payload.Manifest) == "" {
+		return nil, fmt.Errorf("manifest field is required for SSH-signed requests")
+	}
+	return []byte(payload.Manifest), nil
+}
+
+func extractManifestFromMultipart(body []byte, contentType string) ([]byte, error) {
+	_, params, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		return nil, fmt.Errorf("invalid content type")
+	}
+	boundary := params["boundary"]
+	if boundary == "" {
+		return nil, fmt.Errorf("missing multipart boundary")
+	}
+
+	mr := multipart.NewReader(bytes.NewReader(body), boundary)
+	for {
+		part, err := mr.NextPart()
+		if err != nil {
+			return nil, fmt.Errorf("metadata field not found in multipart body")
+		}
+		if part.FormName() == "metadata" {
+			metadataBytes, err := io.ReadAll(part)
+			if err != nil {
+				return nil, fmt.Errorf("failed to read metadata part")
+			}
+			return extractManifestFromJSON(metadataBytes)
 		}
 	}
 }

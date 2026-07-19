@@ -59,7 +59,7 @@ func (ab *AntiBot) Middleware(next http.Handler) http.Handler {
 			}
 		}
 
-		r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MB
+		r.Body = http.MaxBytesReader(w, r.Body, 32<<20) // 32 MB
 
 		next.ServeHTTP(w, r)
 	})

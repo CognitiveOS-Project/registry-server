@@ -3,7 +3,10 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"mime"
+	"mime/multipart"
 	"net/http"
 	"strconv"
 	"time"
@@ -227,13 +230,178 @@ func (s *Server) handlePutVersion() http.HandlerFunc {
 }
 
 func (s *Server) publishPackage(urlPath string, w http.ResponseWriter, r *http.Request) {
+	if isMultipart(r.Header.Get("Content-Type")) {
+		s.publishOfficial(urlPath, w, r)
+	} else {
+		s.publishProxy(urlPath, w, r)
+	}
+}
+
+func isMultipart(ct string) bool {
+	mediaType, _, err := mime.ParseMediaType(ct)
+	return err == nil && mediaType == "multipart/form-data"
+}
+
+func (s *Server) publishProxy(urlPath string, w http.ResponseWriter, r *http.Request) {
 	var req publishRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeErrorJSON(w, http.StatusBadRequest, "VALIDATION_FAILED",
 			"invalid JSON: "+err.Error())
 		return
 	}
+	s.processPublish(urlPath, req, w)
+}
 
+func (s *Server) publishOfficial(urlPath string, w http.ResponseWriter, r *http.Request) {
+	_, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil {
+		writeErrorJSON(w, http.StatusBadRequest, "VALIDATION_FAILED", "invalid content type")
+		return
+	}
+	boundary := params["boundary"]
+	if boundary == "" {
+		writeErrorJSON(w, http.StatusBadRequest, "VALIDATION_FAILED", "missing multipart boundary")
+		return
+	}
+
+	mr := multipart.NewReader(r.Body, boundary)
+
+	var metadataJSON []byte
+	var cgpData []byte
+
+	for {
+		part, err := mr.NextPart()
+		if err != nil {
+			break
+		}
+
+		data, err := io.ReadAll(part)
+		if err != nil {
+			writeErrorJSON(w, http.StatusBadRequest, "VALIDATION_FAILED",
+				fmt.Sprintf("failed to read part %q", part.FormName()))
+			return
+		}
+
+		switch part.FormName() {
+		case "metadata":
+			metadataJSON = data
+		case "cgp":
+			cgpData = data
+		}
+	}
+
+	if metadataJSON == nil {
+		writeErrorJSON(w, http.StatusBadRequest, "VALIDATION_FAILED",
+			"metadata field is required")
+		return
+	}
+
+	if cgpData == nil || len(cgpData) == 0 {
+		writeErrorJSON(w, http.StatusBadRequest, "VALIDATION_FAILED",
+			"cgp field is required for official publish")
+		return
+	}
+
+	if s.config.GitHub == nil || !s.config.GitHub.Enabled() {
+		writeErrorJSON(w, http.StatusServiceUnavailable, "GITHUB_NOT_CONFIGURED",
+			"official publish requires GitHub integration (GITHUB_TOKEN not set)")
+		return
+	}
+
+	var req publishRequest
+	if err := json.Unmarshal(metadataJSON, &req); err != nil {
+		writeErrorJSON(w, http.StatusBadRequest, "VALIDATION_FAILED",
+			"invalid metadata JSON: "+err.Error())
+		return
+	}
+
+	if req.Name == "" || req.Version == "" {
+		writeErrorJSON(w, http.StatusBadRequest, "VALIDATION_FAILED",
+			"name and version are required")
+		return
+	}
+
+	if urlPath != "" {
+		parts := split2(urlPath, "/")
+		if len(parts) == 2 {
+			if parts[0] != req.Name {
+				writeErrorJSON(w, http.StatusBadRequest, "VALIDATION_FAILED",
+					fmt.Sprintf("name mismatch: URL has '%s', body has '%s'", parts[0], req.Name))
+				return
+			}
+			if parts[1] != req.Version {
+				writeErrorJSON(w, http.StatusBadRequest, "VALIDATION_FAILED",
+					fmt.Sprintf("version mismatch: URL has '%s', body has '%s'", parts[1], req.Version))
+				return
+			}
+		}
+	}
+
+	if _, err := s.config.Store.Get(req.Name, req.Version); err == nil {
+		writeErrorJSON(w, http.StatusConflict, "ALREADY_EXISTS",
+			fmt.Sprintf("package '%s' version '%s' already exists", req.Name, req.Version))
+		return
+	}
+
+	if req.Manifest != nil && string(req.Manifest) != "null" && string(req.Manifest) != "" {
+		vr := validate.Run(req.Manifest, nil, req.SHA256)
+		if !vr.AllPassed() {
+			writeJSON(w, http.StatusUnprocessableEntity, map[string]interface{}{
+				"error": map[string]interface{}{
+					"code":    "VALIDATION_FAILED",
+					"message": vr.Error(),
+					"details": vr.Errors,
+				},
+			})
+			return
+		}
+	}
+
+	result, err := s.config.GitHub.PublishPackage(req.Name, req.Version, req.Description, cgpData)
+	if err != nil {
+		log.Printf("GitHub publish failed: %v", err)
+		writeErrorJSON(w, http.StatusInternalServerError, "GITHUB_ERROR",
+			fmt.Sprintf("failed to publish to GitHub: %v", err))
+		return
+	}
+
+	downloadURLs := map[string]string{"": result.DownloadURL}
+
+	pkg := store.Package{
+		Name:             req.Name,
+		Version:          req.Version,
+		Description:      req.Description,
+		Author:           req.Author,
+		License:          req.License,
+		SourceRepository: req.SourceRepository,
+		SourceIssues:     req.SourceIssues,
+		DownloadURL:      result.DownloadURL,
+		DownloadURLs:     downloadURLs,
+		ChecksumSHA256:   req.SHA256,
+		Tags:             req.Tags,
+		Capabilities:     req.Capabilities,
+		Manifest:         string(req.Manifest),
+		Hardware:         req.Hardware,
+	}
+
+	if err := s.config.Store.Put(pkg); err != nil {
+		writeErrorJSON(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
+		return
+	}
+
+	log.Printf("Official: published %s v%s (github=%s, sha256=%s)", req.Name, req.Version, result.DownloadURL, pkg.ChecksumSHA256)
+	writeJSON(w, http.StatusCreated, map[string]interface{}{
+		"name":          req.Name,
+		"version":       req.Version,
+		"sha256":        pkg.ChecksumSHA256,
+		"download_url":  result.DownloadURL,
+		"download_urls": downloadURLs,
+		"url":           fmt.Sprintf("/v1/patches/%s/%s", req.Name, req.Version),
+		"release_tag":   result.ReleaseTag,
+	})
+}
+
+func (s *Server) processPublish(urlPath string, req publishRequest, w http.ResponseWriter) {
 	if req.Name == "" || req.Version == "" {
 		writeErrorJSON(w, http.StatusBadRequest, "VALIDATION_FAILED",
 			"name and version are required")
@@ -286,87 +454,6 @@ func (s *Server) publishPackage(urlPath string, w http.ResponseWriter, r *http.R
 			})
 			return
 		}
-	}
-
-	if _, err := s.config.Store.Get(req.Name, req.Version); err == nil {
-		writeErrorJSON(w, http.StatusConflict, "ALREADY_EXISTS",
-			fmt.Sprintf("package '%s' version '%s' already exists", req.Name, req.Version))
-		return
-	}
-
-	// A1-A10 validation (archive=nil because JSON-only publish)
-	vr := validate.Run(req.Manifest, nil, req.SHA256)
-	if !vr.AllPassed() {
-		writeJSON(w, http.StatusUnprocessableEntity, map[string]interface{}{
-			"error": map[string]interface{}{
-				"code":    "VALIDATION_FAILED",
-				"message": vr.Error(),
-				"details": vr.Errors,
-			},
-		})
-		return
-	}
-
-	// A5: check dependencies exist
-	var m struct {
-		Dependencies map[string]string `json:"dependencies"`
-	}
-	if err := json.Unmarshal(req.Manifest, &m); err == nil {
-		for depName := range m.Dependencies {
-			versions, err := s.config.Store.Versions(depName)
-			if err != nil || len(versions) == 0 {
-				writeErrorJSON(w, http.StatusUnprocessableEntity, "VALIDATION_FAILED",
-					fmt.Sprintf("A5: unresolvable dependency '%s' — not found in registry", depName))
-				return
-			}
-		}
-
-		// A6: no buggy deps
-		for depName := range m.Dependencies {
-			versions, _ := s.config.Store.Versions(depName)
-			for _, v := range versions {
-				if v.Status == "buggy" {
-					writeErrorJSON(w, http.StatusUnprocessableEntity, "VALIDATION_FAILED",
-						fmt.Sprintf("A6: depends on buggy package '%s' version '%s'", depName, v.Version))
-					return
-				}
-			}
-		}
-	}
-
-	pkg := store.Package{
-		Name:             req.Name,
-		Version:          req.Version,
-		Description:      req.Description,
-		Author:           req.Author,
-		License:          req.License,
-		SourceRepository: req.SourceRepository,
-		SourceIssues:     req.SourceIssues,
-		DownloadURL:      req.DownloadURL,
-		SHA256:           req.SHA256,
-		Tags:             req.Tags,
-		Manifest:         string(req.Manifest),
-	}
-
-	if err := s.config.Store.Put(pkg); err != nil {
-		writeErrorJSON(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
-		return
-	}
-
-	log.Printf("Notary: registered %s v%s (sha256=%s)", req.Name, req.Version, pkg.SHA256)
-	writeJSON(w, http.StatusCreated, map[string]interface{}{
-		"name":         req.Name,
-		"version":      req.Version,
-		"sha256":       pkg.SHA256,
-		"download_url": pkg.DownloadURL,
-		"url":          fmt.Sprintf("/v1/patches/%s/%s", req.Name, req.Version),
-	})
-}
-
-func (s *Server) handleSetStatus() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		name := r.PathValue("name")
-		version := r.PathValue("version")
 
 		var m struct {
 			Dependencies map[string]string `json:"dependencies"`
@@ -423,11 +510,11 @@ func (s *Server) handleSetStatus() http.HandlerFunc {
 
 	log.Printf("Notary: registered %s v%s (sha256=%s)", req.Name, req.Version, pkg.ChecksumSHA256)
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
-		"name":           req.Name,
-		"version":        req.Version,
-		"sha256":         pkg.ChecksumSHA256,
-		"download_urls":  pkg.DownloadURLs,
-		"url":            fmt.Sprintf("/v1/patches/%s/%s", req.Name, req.Version),
+		"name":          req.Name,
+		"version":       req.Version,
+		"sha256":        pkg.ChecksumSHA256,
+		"download_urls": pkg.DownloadURLs,
+		"url":           fmt.Sprintf("/v1/patches/%s/%s", req.Name, req.Version),
 	})
 }
 

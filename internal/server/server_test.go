@@ -3,12 +3,15 @@ package server
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/CognitiveOS-Project/registry-server/internal/auth"
+	githubclient "github.com/CognitiveOS-Project/registry-server/internal/github"
 	"github.com/CognitiveOS-Project/registry-server/internal/store"
 )
 
@@ -525,6 +528,7 @@ func TestSetStatus(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := testNewRequest("PATCH", "/v1/patches/test-patch/1.0.0/status", body)
 	r.Header.Set("Content-Type", "application/json")
+	r.Header.Set("Authorization", "Bearer test-token-123")
 	srv.ServeHTTP(w, r)
 
 	if w.Code != http.StatusOK {
@@ -773,5 +777,249 @@ func TestDependencyValidationMissingDep(t *testing.T) {
 
 	if w.Code != http.StatusUnprocessableEntity {
 		t.Errorf("expected 422 for missing dependency, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func setupOfficialTestServer(t *testing.T, ghHandler http.HandlerFunc) (*Server, *httptest.Server) {
+	t.Helper()
+	dataDir := t.TempDir()
+
+	memStore := store.NewMemoryStore()
+	tokenAuth := auth.NewMemoryTokenStore()
+	_ = tokenAuth.Add("test-token-123", "publish", "admin")
+	sshKeys := auth.NewMemorySSHKeyStore()
+
+	ghSrv := httptest.NewServer(ghHandler)
+	t.Cleanup(ghSrv.Close)
+
+	ghClient := &githubclient.Client{
+		Org:     "test-org",
+		Token:   "ghp_test",
+		HTTP:    ghSrv.Client(),
+		BaseURL: ghSrv.URL,
+	}
+
+	cfg := Config{
+		Addr:      ":0",
+		DataDir:   dataDir,
+		Store:     memStore,
+		TokenAuth: tokenAuth,
+		SSHKeys:   sshKeys,
+		GitHub:    ghClient,
+	}
+
+	return New(cfg), ghSrv
+}
+
+func buildMultipartBody(t *testing.T, metadata map[string]interface{}, cgpData []byte) (string, []byte) {
+	t.Helper()
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+
+	metadataJSON, err := json.Marshal(metadata)
+	if err != nil {
+		t.Fatalf("failed to marshal metadata: %v", err)
+	}
+
+	if err := writer.WriteField("metadata", string(metadataJSON)); err != nil {
+		t.Fatalf("failed to write metadata field: %v", err)
+	}
+
+	part, err := writer.CreateFormFile("cgp", "test-pkg-1.0.0.cgp")
+	if err != nil {
+		t.Fatalf("failed to create cgp part: %v", err)
+	}
+	if _, err := part.Write(cgpData); err != nil {
+		t.Fatalf("failed to write cgp data: %v", err)
+	}
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf("failed to close writer: %v", err)
+	}
+
+	return writer.FormDataContentType(), body.Bytes()
+}
+
+func TestOfficialPublishRequiresGitHub(t *testing.T) {
+	dataDir := t.TempDir()
+	memStore := store.NewMemoryStore()
+	tokenAuth := auth.NewMemoryTokenStore()
+	_ = tokenAuth.Add("test-token-123", "publish", "admin")
+	sshKeys := auth.NewMemorySSHKeyStore()
+
+	cfg := Config{
+		Addr:      ":0",
+		DataDir:   dataDir,
+		Store:     memStore,
+		TokenAuth: tokenAuth,
+		SSHKeys:   sshKeys,
+		GitHub:    nil,
+	}
+
+	srv := New(cfg)
+
+	metadata := map[string]interface{}{
+		"name":        "my-pkg",
+		"version":     "1.0.0",
+		"description": "test package",
+		"sha256":      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+	}
+	ct, body := buildMultipartBody(t, metadata, []byte("fake cgp data"))
+
+	w := httptest.NewRecorder()
+	r := testNewRequest("POST", "/v1/patches", bytes.NewReader(body))
+	r.Header.Set("Content-Type", ct)
+	r.Header.Set("Authorization", "Bearer test-token-123")
+	srv.ServeHTTP(w, r)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("expected 503 when GitHub not configured, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestOfficialPublishSuccess(t *testing.T) {
+	var assetUploaded bool
+
+	srv, _ := setupOfficialTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == "GET" && r.URL.Path == "/repos/test-org/my-pkg":
+			w.WriteHeader(404)
+		case r.Method == "POST" && r.URL.Path == "/orgs/test-org/repos":
+			w.WriteHeader(201)
+			fmt.Fprintf(w, `{"name":"my-pkg"}`)
+		case r.Method == "POST" && r.URL.Path == "/repos/test-org/my-pkg/releases":
+			w.WriteHeader(201)
+			fmt.Fprintf(w, `{"id":1,"tag_name":"v1.0.0","name":"my-pkg v1.0.0"}`)
+		case r.Method == "POST" && r.URL.Path == "/repos/test-org/my-pkg/releases/1/assets":
+			assetUploaded = true
+			w.WriteHeader(201)
+			fmt.Fprintf(w, `{"browser_download_url":"https://github.com/test-org/my-pkg/releases/download/v1.0.0/my-pkg-1.0.0.cgp"}`)
+		default:
+			w.WriteHeader(404)
+			fmt.Fprintf(w, `{"message":"not found: %s %s"}`, r.Method, r.URL.Path)
+		}
+	})
+
+	metadata := map[string]interface{}{
+		"name":        "my-pkg",
+		"version":     "1.0.0",
+		"description": "my awesome package",
+		"author":      "tester",
+		"sha256":      "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		"manifest":    map[string]interface{}{"name": "my-pkg", "version": "1.0.0", "description": "my awesome package"},
+	}
+	ct, body := buildMultipartBody(t, metadata, []byte("fake cgp archive data"))
+
+	w := httptest.NewRecorder()
+	r := testNewRequest("POST", "/v1/patches", bytes.NewReader(body))
+	r.Header.Set("Content-Type", ct)
+	r.Header.Set("Authorization", "Bearer test-token-123")
+	srv.ServeHTTP(w, r)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	if !assetUploaded {
+		t.Error("expected .cgp asset to be uploaded to GitHub")
+	}
+
+	var resp map[string]interface{}
+	_ = json.NewDecoder(w.Body).Decode(&resp)
+	if resp["name"] != "my-pkg" {
+		t.Errorf("expected name my-pkg, got %v", resp["name"])
+	}
+	if resp["version"] != "1.0.0" {
+		t.Errorf("expected version 1.0.0, got %v", resp["version"])
+	}
+	if resp["download_url"] == nil {
+		t.Error("expected download_url in response")
+	}
+
+	pkg, err := srv.config.Store.Get("my-pkg", "1.0.0")
+	if err != nil {
+		t.Fatalf("package not stored: %v", err)
+	}
+	if pkg.DownloadURL == "" {
+		t.Error("expected download URL stored")
+	}
+}
+
+func TestOfficialPublishDuplicate(t *testing.T) {
+	srv, _ := setupOfficialTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		fmt.Fprintf(w, `{}`)
+	})
+
+	_ = srv.config.Store.Put(store.Package{
+		Name:           "dup-pkg",
+		Version:        "1.0.0",
+		Description:    "already exists",
+		ChecksumSHA256: "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+		DownloadURL:    "https://example.com/dup-pkg-1.0.0.cgp",
+	})
+
+	metadata := map[string]interface{}{
+		"name":        "dup-pkg",
+		"version":     "1.0.0",
+		"description": "duplicate",
+		"sha256":      "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+	}
+	ct, body := buildMultipartBody(t, metadata, []byte("fake cgp data"))
+
+	w := httptest.NewRecorder()
+	r := testNewRequest("POST", "/v1/patches", bytes.NewReader(body))
+	r.Header.Set("Content-Type", ct)
+	r.Header.Set("Authorization", "Bearer test-token-123")
+	srv.ServeHTTP(w, r)
+
+	if w.Code != http.StatusConflict {
+		t.Errorf("expected 409 for duplicate, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestOfficialPublishMissingMetadata(t *testing.T) {
+	srv, _ := setupOfficialTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		fmt.Fprintf(w, `{}`)
+	})
+	_ = srv
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, _ := writer.CreateFormFile("cgp", "test.cgp")
+	part.Write([]byte("fake data"))
+	writer.Close()
+
+	w := httptest.NewRecorder()
+	r := testNewRequest("POST", "/v1/patches", bytes.NewReader(body.Bytes()))
+	r.Header.Set("Content-Type", writer.FormDataContentType())
+	r.Header.Set("Authorization", "Bearer test-token-123")
+	srv.ServeHTTP(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for missing metadata, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestOfficialPublishMissingCGP(t *testing.T) {
+	srv, _ := setupOfficialTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		fmt.Fprintf(w, `{}`)
+	})
+	_ = srv
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	writer.WriteField("metadata", `{"name":"x","version":"1.0.0"}`)
+	writer.Close()
+
+	w := httptest.NewRecorder()
+	r := testNewRequest("POST", "/v1/patches", bytes.NewReader(body.Bytes()))
+	r.Header.Set("Content-Type", writer.FormDataContentType())
+	r.Header.Set("Authorization", "Bearer test-token-123")
+	srv.ServeHTTP(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for missing cgp, got %d: %s", w.Code, w.Body.String())
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/CognitiveOS-Project/registry-server/internal/auth"
+	githubclient "github.com/CognitiveOS-Project/registry-server/internal/github"
 	"github.com/CognitiveOS-Project/registry-server/internal/server"
 	"github.com/CognitiveOS-Project/registry-server/internal/store"
 )
@@ -71,12 +72,20 @@ func main() {
 		}
 	}
 
+	ghClient := githubclient.NewClient()
+	if ghClient.Enabled() {
+		log.Printf("GitHub: integration enabled (org=%s)", ghClient.Org)
+	} else {
+		log.Printf("GitHub: integration disabled (GITHUB_TOKEN not set)")
+	}
+
 	cfg := server.Config{
 		Addr:      *addr,
 		DataDir:   dd,
 		Store:     st,
 		TokenAuth: tokenStore,
 		SSHKeys:   sshKeys,
+		GitHub:    ghClient,
 	}
 
 	srv := server.New(cfg)
@@ -84,9 +93,9 @@ func main() {
 	httpServer := &http.Server{
 		Addr:              *addr,
 		Handler:           srv,
-		ReadTimeout:       10 * time.Second,
+		ReadTimeout:       120 * time.Second,
 		ReadHeaderTimeout: 5 * time.Second,
-		WriteTimeout:      30 * time.Second,
+		WriteTimeout:      120 * time.Second,
 		IdleTimeout:       120 * time.Second,
 		MaxHeaderBytes:    1 << 20, // 1 MB
 	}

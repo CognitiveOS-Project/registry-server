@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/CognitiveOS-Project/registry-server/internal/auth"
+	githubclient "github.com/CognitiveOS-Project/registry-server/internal/github"
 	"github.com/CognitiveOS-Project/registry-server/internal/middleware"
 	"github.com/CognitiveOS-Project/registry-server/internal/store"
 )
@@ -15,6 +16,7 @@ type Config struct {
 	Store     store.Store
 	TokenAuth auth.TokenStore
 	SSHKeys   auth.SSHKeyStore
+	GitHub    *githubclient.Client
 }
 
 type Server struct {
