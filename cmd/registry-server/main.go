@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -16,34 +17,78 @@ import (
 )
 
 func main() {
-	addr := flag.String("addr", ":8080", "listen address")
-	dataDir := flag.String("data-dir", "./data", "data directory for persistent store")
-	sqlite := flag.Bool("sqlite", false, "use SQLite backend (default: memory)")
+	addr := flag.String("addr", "", "listen address (overrides PORT env)")
+	dataDir := flag.String("data-dir", "", "data directory (overrides DATA_DIR env)")
+	sqlite := flag.Bool("sqlite", false, "use file-backed store (default: memory)")
 	flag.Parse()
 
+	port := envOrDefault("PORT", "8080")
+	if *addr == "" {
+		*addr = ":" + port
+	}
+	dd := envOrDefault("DATA_DIR", "./data")
+	if *dataDir != "" {
+		dd = *dataDir
+	}
+
 	var st store.Store
-	if *sqlite {
-		log.Printf("Using file-backed store: %s", *dataDir+"/patches.json")
-		st = store.NewFileStore(*dataDir + "/patches.json")
+	if s3Endpoint := os.Getenv("S3_ENDPOINT"); s3Endpoint != "" {
+		log.Printf("Using S3 store: bucket=%s endpoint=%s", envOrDefault("S3_BUCKET", "cognitiveos-registry"), s3Endpoint)
+		var err error
+		st, err = store.NewS3Store(store.S3Config{
+			Endpoint:  s3Endpoint,
+			Bucket:    envOrDefault("S3_BUCKET", "cognitiveos-registry"),
+			AccessKey: os.Getenv("S3_ACCESS_KEY"),
+			SecretKey: os.Getenv("S3_SECRET_KEY"),
+			Region:    envOrDefault("S3_REGION", "auto"),
+		})
+		if err != nil {
+			log.Fatalf("Failed to create S3 store: %v", err)
+		}
+	} else if *sqlite {
+		log.Printf("Using file-backed store: %s/patches.json", dd)
+		st = store.NewFileStore(dd + "/patches.json")
 	} else {
+		log.Printf("Using in-memory store")
 		st = store.NewMemoryStore()
 	}
 
 	tokenStore := auth.NewMemoryTokenStore()
-	_ = tokenStore.Add("test-token", "publish", "admin")
+	sshKeys := auth.NewMemorySSHKeyStore()
+
+	if trustedKeys := os.Getenv("SSH_TRUSTED_KEYS"); trustedKeys != "" {
+		for _, pubKey := range strings.Split(trustedKeys, ",") {
+			pubKey = strings.TrimSpace(pubKey)
+			if pubKey == "" {
+				continue
+			}
+			info, err := sshKeys.Register(pubKey)
+			if err != nil {
+				log.Printf("Warning: failed to register trusted key: %v", err)
+				continue
+			}
+			log.Printf("Auth: loaded trusted key %s (%s)", info.Fingerprint, info.Comment)
+		}
+	}
 
 	cfg := server.Config{
 		Addr:      *addr,
-		DataDir:   *dataDir,
+		DataDir:   dd,
 		Store:     st,
 		TokenAuth: tokenStore,
+		SSHKeys:   sshKeys,
 	}
 
 	srv := server.New(cfg)
 
 	httpServer := &http.Server{
-		Addr:    *addr,
-		Handler: srv,
+		Addr:              *addr,
+		Handler:           srv,
+		ReadTimeout:       10 * time.Second,
+		ReadHeaderTimeout: 5 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    1 << 20, // 1 MB
 	}
 
 	go func() {
@@ -67,4 +112,11 @@ func main() {
 	}
 
 	log.Println("Server stopped")
+}
+
+func envOrDefault(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
 }

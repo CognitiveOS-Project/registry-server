@@ -1,0 +1,10 @@
+.git
+.gitignore
+.github
+build
+data
+*_test.go
+Makefile
+LICENSE
+README.md
+AGENTS.md

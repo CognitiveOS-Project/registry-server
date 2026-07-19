@@ -1,0 +1,11 @@
+FROM rclone/rclone:latest
+
+RUN apk add --no-cache bash
+
+WORKDIR /app
+
+COPY scripts/cloudflare/ ./scripts/cloudflare/
+
+RUN chmod +x scripts/cloudflare/*.sh
+
+ENTRYPOINT ["scripts/cloudflare/setup-r2.sh"]

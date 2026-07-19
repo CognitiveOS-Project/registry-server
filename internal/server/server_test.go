@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -27,15 +28,15 @@ func setupTestServer(t *testing.T) (*Server, string) {
 	}
 
 	_ = memStore.Put(store.Package{
-		Name:        "test-patch",
-		Version:     "1.0.0",
-		Description: "A test cognitive patch",
-		Author:      "test-author",
-		Size:        2048,
-		SHA256:      "deadbeef",
-		DownloadURL: "https://example.com/test-patch-1.0.0.cgp",
-		Tags:        []string{"test", "alpha"},
-		Status:      "active",
+		Name:           "test-patch",
+		Version:        "1.0.0",
+		Description:    "A test cognitive patch",
+		Author:         "test-author",
+		Size:           2048,
+		ChecksumSHA256: "deadbeef",
+		DownloadURL:    "https://example.com/test-patch-1.0.0.cgp",
+		Tags:           []string{"test", "alpha"},
+		Status:         "active",
 	})
 
 	_ = memStore.Put(store.Package{
@@ -48,10 +49,16 @@ func setupTestServer(t *testing.T) (*Server, string) {
 	return New(cfg), dataDir
 }
 
+func testNewRequest(method, path string, body io.Reader) *http.Request {
+	r := httptest.NewRequest(method, path, body)
+	r.Header.Set("User-Agent", "cpm/test")
+	return r
+}
+
 func TestHealth(t *testing.T) {
 	srv, _ := setupTestServer(t)
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/v1/health", nil)
+	r := testNewRequest("GET", "/v1/health", nil)
 	srv.ServeHTTP(w, r)
 
 	if w.Code != http.StatusOK {
@@ -68,44 +75,112 @@ func TestHealth(t *testing.T) {
 func TestSearch(t *testing.T) {
 	srv, _ := setupTestServer(t)
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/v1/search?q=test", nil)
+	r := testNewRequest("GET", "/v1/search?q=test", nil)
 	srv.ServeHTTP(w, r)
 
 	if w.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d", w.Code)
 	}
 
-	var results []store.Package
-	_ = json.NewDecoder(w.Body).Decode(&results)
-	if len(results) == 0 {
+	var resp struct {
+		Results []store.Package `json:"results"`
+		Total   int             `json:"total"`
+		Page    int             `json:"page"`
+		PerPage int             `json:"per_page"`
+	}
+	_ = json.NewDecoder(w.Body).Decode(&resp)
+	if len(resp.Results) == 0 {
 		t.Fatal("expected search results")
 	}
-	if results[0].Name != "test-patch" {
-		t.Errorf("expected test-patch, got %s", results[0].Name)
+	if resp.Results[0].Name != "test-patch" {
+		t.Errorf("expected test-patch, got %s", resp.Results[0].Name)
+	}
+	if resp.Total != 1 {
+		t.Errorf("expected total 1, got %d", resp.Total)
+	}
+	if resp.Page != 1 {
+		t.Errorf("expected page 1, got %d", resp.Page)
+	}
+	if resp.PerPage != 20 {
+		t.Errorf("expected per_page 20, got %d", resp.PerPage)
 	}
 }
 
 func TestSearchNoQuery(t *testing.T) {
 	srv, _ := setupTestServer(t)
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/v1/search", nil)
+	r := testNewRequest("GET", "/v1/search", nil)
 	srv.ServeHTTP(w, r)
 
 	if w.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d", w.Code)
 	}
 
-	var results []store.Package
-	_ = json.NewDecoder(w.Body).Decode(&results)
-	if len(results) == 0 {
+	var resp struct {
+		Results []store.Package `json:"results"`
+		Total   int             `json:"total"`
+	}
+	_ = json.NewDecoder(w.Body).Decode(&resp)
+	if len(resp.Results) == 0 {
 		t.Error("expected at least one result with empty query")
+	}
+	if resp.Total != 2 {
+		t.Errorf("expected total 2, got %d", resp.Total)
 	}
 }
 
-func TestGetPatch(t *testing.T) {
+func TestSearchPagination(t *testing.T) {
 	srv, _ := setupTestServer(t)
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/v1/patches/test-patch/1.0.0", nil)
+	r := testNewRequest("GET", "/v1/search?page=1&per_page=1", nil)
+	srv.ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+
+	var resp struct {
+		Results []store.Package `json:"results"`
+		Total   int             `json:"total"`
+		Page    int             `json:"page"`
+		PerPage int             `json:"per_page"`
+	}
+	_ = json.NewDecoder(w.Body).Decode(&resp)
+	if len(resp.Results) != 1 {
+		t.Errorf("expected 1 result with per_page=1, got %d", len(resp.Results))
+	}
+	if resp.Total != 2 {
+		t.Errorf("expected total 2, got %d", resp.Total)
+	}
+	if resp.PerPage != 1 {
+		t.Errorf("expected per_page 1, got %d", resp.PerPage)
+	}
+}
+
+func TestSearchExact(t *testing.T) {
+	srv, _ := setupTestServer(t)
+	w := httptest.NewRecorder()
+	r := testNewRequest("GET", "/v1/search?q=test-patch&exact=true", nil)
+	srv.ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+
+	var resp struct {
+		Results []store.Package `json:"results"`
+		Total   int             `json:"total"`
+	}
+	_ = json.NewDecoder(w.Body).Decode(&resp)
+	if len(resp.Results) != 1 {
+		t.Errorf("expected 1 exact match, got %d", len(resp.Results))
+	}
+}
+
+func TestGetPatchByVersion(t *testing.T) {
+	srv, _ := setupTestServer(t)
+	w := httptest.NewRecorder()
+	r := testNewRequest("GET", "/v1/patches/test-patch/1.0.0", nil)
 	srv.ServeHTTP(w, r)
 
 	if w.Code != http.StatusOK {
@@ -122,10 +197,46 @@ func TestGetPatch(t *testing.T) {
 	}
 }
 
+func TestGetPatchLatest(t *testing.T) {
+	srv, _ := setupTestServer(t)
+
+	_ = srv.config.Store.Put(store.Package{
+		Name:        "multi-ver",
+		Version:     "2.0.0",
+		Description: "newer version",
+		Status:      "active",
+	})
+
+	w := httptest.NewRecorder()
+	r := testNewRequest("GET", "/v1/patches/multi-ver", nil)
+	srv.ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var pkg store.Package
+	_ = json.NewDecoder(w.Body).Decode(&pkg)
+	if pkg.Version != "2.0.0" {
+		t.Errorf("expected latest version 2.0.0, got %s", pkg.Version)
+	}
+}
+
 func TestGetPatchNotFound(t *testing.T) {
 	srv, _ := setupTestServer(t)
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/v1/patches/nonexistent/9.9.9", nil)
+	r := testNewRequest("GET", "/v1/patches/nonexistent/9.9.9", nil)
+	srv.ServeHTTP(w, r)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", w.Code)
+	}
+}
+
+func TestGetPatchNotFoundLatest(t *testing.T) {
+	srv, _ := setupTestServer(t)
+	w := httptest.NewRecorder()
+	r := testNewRequest("GET", "/v1/patches/nonexistent", nil)
 	srv.ServeHTTP(w, r)
 
 	if w.Code != http.StatusNotFound {
@@ -136,17 +247,26 @@ func TestGetPatchNotFound(t *testing.T) {
 func TestGetVersions(t *testing.T) {
 	srv, _ := setupTestServer(t)
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/v1/patches/test-patch/versions", nil)
+	r := testNewRequest("GET", "/v1/patches/test-patch/versions", nil)
 	srv.ServeHTTP(w, r)
 
 	if w.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d", w.Code)
 	}
 
-	var resp map[string]interface{}
-	_ = json.NewDecoder(w.Body).Decode(&resp)
-	if resp["name"] != "test-patch" {
-		t.Errorf("expected name test-patch, got %s", resp["name"])
+	var versions []struct {
+		Version string `json:"version"`
+		Status  string `json:"status"`
+	}
+	_ = json.NewDecoder(w.Body).Decode(&versions)
+	if len(versions) != 1 {
+		t.Fatalf("expected 1 version, got %d", len(versions))
+	}
+	if versions[0].Version != "1.0.0" {
+		t.Errorf("expected version 1.0.0, got %s", versions[0].Version)
+	}
+	if versions[0].Status != "active" {
+		t.Errorf("expected status active, got %s", versions[0].Status)
 	}
 }
 
@@ -154,7 +274,7 @@ func TestDownload(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/v1/patches/test-patch/1.0.0/download", nil)
+	r := testNewRequest("GET", "/v1/patches/test-patch/1.0.0/download", nil)
 	srv.ServeHTTP(w, r)
 
 	if w.Code != http.StatusFound {
@@ -171,7 +291,7 @@ func TestDownloadNotFound(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/v1/patches/nonexistent/9.9.9/download", nil)
+	r := testNewRequest("GET", "/v1/patches/nonexistent/9.9.9/download", nil)
 	srv.ServeHTTP(w, r)
 
 	if w.Code != http.StatusNotFound {
@@ -188,7 +308,7 @@ func TestDownloadNoURL(t *testing.T) {
 	})
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/v1/patches/no-download/1.0.0/download", nil)
+	r := testNewRequest("GET", "/v1/patches/no-download/1.0.0/download", nil)
 	srv.ServeHTTP(w, r)
 
 	if w.Code != http.StatusNotFound {
@@ -201,7 +321,7 @@ func TestPublishRequiresAuth(t *testing.T) {
 
 	body := bytes.NewBufferString(`{"name":"p","version":"1.0.0","download_url":"https://example.com/p-1.0.0.cgp","sha256":"abc123def456abc123def456abc123def456abc123def456abc123def456abc1","manifest":{"name":"p","version":"1.0.0","description":"test"}}`)
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "/v1/patches", body)
+	r := testNewRequest("POST", "/v1/patches", body)
 	r.Header.Set("Content-Type", "application/json")
 	srv.ServeHTTP(w, r)
 
@@ -226,7 +346,7 @@ func TestPublishWithAuth(t *testing.T) {
 	body, _ := json.Marshal(payload)
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "/v1/patches", bytes.NewReader(body))
+	r := testNewRequest("POST", "/v1/patches", bytes.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("Authorization", "Bearer test-token-123")
 	srv.ServeHTTP(w, r)
@@ -239,6 +359,29 @@ func TestPublishWithAuth(t *testing.T) {
 	_ = json.NewDecoder(w.Body).Decode(&resp)
 	if resp["name"] != "new-patch" {
 		t.Errorf("expected new-patch, got %s", resp["name"])
+	}
+}
+
+func TestPublishWithoutManifest(t *testing.T) {
+	srv, _ := setupTestServer(t)
+
+	payload := map[string]interface{}{
+		"name":         "no-manifest-patch",
+		"version":      "1.0.0",
+		"description":  "published without manifest",
+		"download_url": "https://example.com/no-manifest-1.0.0.cgp",
+		"sha256":       "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+	}
+	body, _ := json.Marshal(payload)
+
+	w := httptest.NewRecorder()
+	r := testNewRequest("POST", "/v1/patches", bytes.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
+	r.Header.Set("Authorization", "Bearer test-token-123")
+	srv.ServeHTTP(w, r)
+
+	if w.Code != http.StatusCreated {
+		t.Errorf("expected 201 for publish without manifest, got %d: %s", w.Code, w.Body.String())
 	}
 }
 
@@ -258,7 +401,7 @@ func TestPublishWithManifestAndDownloadURL(t *testing.T) {
 	body, _ := json.Marshal(payload)
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "/v1/patches", bytes.NewReader(body))
+	r := testNewRequest("POST", "/v1/patches", bytes.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("Authorization", "Bearer test-token-123")
 	srv.ServeHTTP(w, r)
@@ -272,8 +415,11 @@ func TestPublishWithManifestAndDownloadURL(t *testing.T) {
 	if pkg["name"] != "json-patch" {
 		t.Errorf("expected json-patch, got %s", pkg["name"])
 	}
-	if pkg["download_url"] != "https://example.com/json-patch-2.0.0.cgp" {
-		t.Errorf("expected download_url, got %s", pkg["download_url"])
+	urls, ok := pkg["download_urls"].(map[string]interface{})
+	if !ok || urls == nil {
+		t.Errorf("expected download_urls map, got %v", pkg["download_urls"])
+	} else if urls[""] != "https://example.com/json-patch-2.0.0.cgp" {
+		t.Errorf("expected download_urls[''], got %s", urls[""])
 	}
 }
 
@@ -292,7 +438,7 @@ func TestPublishRejectsDuplicate(t *testing.T) {
 	body, _ := json.Marshal(payload)
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "/v1/patches", bytes.NewReader(body))
+	r := testNewRequest("POST", "/v1/patches", bytes.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("Authorization", "Bearer test-token-123")
 	srv.ServeHTTP(w, r)
@@ -312,7 +458,7 @@ func TestPublishRequiresDownloadURL(t *testing.T) {
 	body, _ := json.Marshal(payload)
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "/v1/patches", bytes.NewReader(body))
+	r := testNewRequest("POST", "/v1/patches", bytes.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("Authorization", "Bearer test-token-123")
 	srv.ServeHTTP(w, r)
@@ -337,7 +483,7 @@ func TestPutVersion(t *testing.T) {
 	body, _ := json.Marshal(payload)
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("PUT", "/v1/patches/test-patch/2.0.0", bytes.NewReader(body))
+	r := testNewRequest("PUT", "/v1/patches/test-patch/2.0.0", bytes.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("Authorization", "Bearer test-token-123")
 	srv.ServeHTTP(w, r)
@@ -362,12 +508,11 @@ func TestPutVersionMismatch(t *testing.T) {
 	body, _ := json.Marshal(payload)
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("PUT", "/v1/patches/test-patch/3.0.0", bytes.NewReader(body))
+	r := testNewRequest("PUT", "/v1/patches/test-patch/3.0.0", bytes.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("Authorization", "Bearer test-token-123")
 	srv.ServeHTTP(w, r)
 
-	// 2.0.0 in body vs 3.0.0 in URL — version mismatch should be caught by the manifest
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected 400 for version mismatch, got %d: %s", w.Code, w.Body.String())
 	}
@@ -378,9 +523,8 @@ func TestSetStatus(t *testing.T) {
 
 	body := bytes.NewBufferString(`{"status":"deprecated"}`)
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("PATCH", "/v1/patches/test-patch/1.0.0/status", body)
+	r := testNewRequest("PATCH", "/v1/patches/test-patch/1.0.0/status", body)
 	r.Header.Set("Content-Type", "application/json")
-	r.Header.Set("Authorization", "Bearer test-token-123")
 	srv.ServeHTTP(w, r)
 
 	if w.Code != http.StatusOK {
@@ -399,7 +543,7 @@ func TestSetStatusRequiresAuth(t *testing.T) {
 
 	body := bytes.NewBufferString(`{"status":"deprecated"}`)
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("PATCH", "/v1/patches/test-patch/1.0.0/status", body)
+	r := testNewRequest("PATCH", "/v1/patches/test-patch/1.0.0/status", body)
 	r.Header.Set("Content-Type", "application/json")
 	srv.ServeHTTP(w, r)
 
@@ -412,34 +556,90 @@ func TestGetDependencies(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/v1/patches/test-patch/dependencies", nil)
+	r := testNewRequest("GET", "/v1/patches/test-patch/dependencies", nil)
 	srv.ServeHTTP(w, r)
 
 	if w.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var resp map[string]interface{}
+	var resp dependencyTree
 	_ = json.NewDecoder(w.Body).Decode(&resp)
-	if resp["name"] != "test-patch" {
-		t.Errorf("expected test-patch, got %s", resp["name"])
+	if resp.Name != "test-patch" {
+		t.Errorf("expected test-patch, got %s", resp.Name)
+	}
+	if resp.Version != "1.0.0" {
+		t.Errorf("expected 1.0.0, got %s", resp.Version)
+	}
+}
+
+func TestGetDependenciesTree(t *testing.T) {
+	srv, _ := setupTestServer(t)
+
+	_ = srv.config.Store.Put(store.Package{
+		Name:        "leaf-dep",
+		Version:     "1.0.0",
+		Description: "leaf dependency",
+		Manifest:    `{"name":"leaf-dep","version":"1.0.0"}`,
+		Status:      "active",
+	})
+
+	_ = srv.config.Store.Put(store.Package{
+		Name:        "mid-dep",
+		Version:     "1.0.0",
+		Description: "middle dependency",
+		Manifest:    `{"name":"mid-dep","version":"1.0.0","dependencies":{"leaf-dep":"^1.0.0"}}`,
+		Status:      "active",
+	})
+
+	_ = srv.config.Store.Put(store.Package{
+		Name:        "root-pkg",
+		Version:     "1.0.0",
+		Description: "root package",
+		Manifest:    `{"name":"root-pkg","version":"1.0.0","dependencies":{"mid-dep":"^1.0.0"}}`,
+		Status:      "active",
+	})
+
+	w := httptest.NewRecorder()
+	r := testNewRequest("GET", "/v1/patches/root-pkg/dependencies", nil)
+	srv.ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp dependencyTree
+	_ = json.NewDecoder(w.Body).Decode(&resp)
+	if resp.Name != "root-pkg" {
+		t.Errorf("expected root-pkg, got %s", resp.Name)
+	}
+	if len(resp.Dependencies) != 1 {
+		t.Fatalf("expected 1 direct dep, got %d", len(resp.Dependencies))
+	}
+	if resp.Dependencies[0].Name != "mid-dep" {
+		t.Errorf("expected mid-dep, got %s", resp.Dependencies[0].Name)
+	}
+	if len(resp.Dependencies[0].Dependencies) != 1 {
+		t.Fatalf("expected 1 transitive dep, got %d", len(resp.Dependencies[0].Dependencies))
+	}
+	if resp.Dependencies[0].Dependencies[0].Name != "leaf-dep" {
+		t.Errorf("expected leaf-dep, got %s", resp.Dependencies[0].Dependencies[0].Name)
 	}
 }
 
 func TestValidate(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	// Add a package with manifest for validation
 	_ = srv.config.Store.Put(store.Package{
-		Name:        "validatable",
-		Version:     "1.0.0",
-		Description: "can be validated",
-		SHA256:      "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
-		Manifest:    `{"name":"validatable","version":"1.0.0","description":"can be validated"}`,
+		Name:           "validatable",
+		Version:        "1.0.0",
+		Description:    "can be validated",
+		ChecksumSHA256: "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+		Manifest:       `{"name":"validatable","version":"1.0.0","description":"can be validated"}`,
 	})
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "/v1/patches/validatable/1.0.0/validate", nil)
+	r := testNewRequest("POST", "/v1/patches/validatable/1.0.0/validate", nil)
 	r.Header.Set("Authorization", "Bearer test-token-123")
 	srv.ServeHTTP(w, r)
 
@@ -457,9 +657,9 @@ func TestValidate(t *testing.T) {
 func TestUnlock(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	body := bytes.NewBufferString(`{"model":"gpt-4","unlock_code":"CODE123"}`)
+	body := bytes.NewBufferString(`{"code":"CODE123"}`)
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "/v1/unlock", body)
+	r := testNewRequest("POST", "/v1/patches/test-patch/1.0.0/unlock", body)
 	r.Header.Set("Content-Type", "application/json")
 	srv.ServeHTTP(w, r)
 
@@ -472,14 +672,20 @@ func TestUnlock(t *testing.T) {
 	if resp["status"] != "ok" {
 		t.Errorf("expected status ok, got %s", resp["status"])
 	}
+	if resp["name"] != "test-patch" {
+		t.Errorf("expected name test-patch, got %s", resp["name"])
+	}
+	if resp["version"] != "1.0.0" {
+		t.Errorf("expected version 1.0.0, got %s", resp["version"])
+	}
 }
 
-func TestUnlockMissingFields(t *testing.T) {
+func TestUnlockMissingCode(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	body := bytes.NewBufferString(`{"model":""}`)
+	body := bytes.NewBufferString(`{"code":""}`)
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "/v1/unlock", body)
+	r := testNewRequest("POST", "/v1/patches/test-patch/1.0.0/unlock", body)
 	r.Header.Set("Content-Type", "application/json")
 	srv.ServeHTTP(w, r)
 
@@ -492,7 +698,7 @@ func TestCORSHeaders(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("OPTIONS", "/v1/health", nil)
+	r := testNewRequest("OPTIONS", "/v1/health", nil)
 	srv.ServeHTTP(w, r)
 
 	if w.Code != http.StatusNoContent {
@@ -503,37 +709,14 @@ func TestCORSHeaders(t *testing.T) {
 	}
 }
 
-func TestPublishFailsOnMissingManifest(t *testing.T) {
-	srv, _ := setupTestServer(t)
-
-	payload := map[string]interface{}{
-		"name":         "no-manifest",
-		"version":      "1.0.0",
-		"download_url": "https://example.com/no-manifest-1.0.0.cgp",
-		"sha256":       "gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
-	}
-	body, _ := json.Marshal(payload)
-
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "/v1/patches", bytes.NewReader(body))
-	r.Header.Set("Content-Type", "application/json")
-	r.Header.Set("Authorization", "Bearer test-token-123")
-	srv.ServeHTTP(w, r)
-
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("expected 400, got %d: %s", w.Code, w.Body.String())
-	}
-}
-
 func TestPublishRequiresPublishScope(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	// Token with only "read" scope
 	_ = srv.config.TokenAuth.(*auth.MemoryTokenStore).Add("readonly-token", "read")
 
 	body := bytes.NewBufferString(`{"name":"x","version":"1.0.0","download_url":"https://example.com/x.cgp","sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","manifest":{"name":"x","version":"1.0.0","description":"test"}}`)
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "/v1/patches", body)
+	r := testNewRequest("POST", "/v1/patches", body)
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("Authorization", "Bearer readonly-token")
 	srv.ServeHTTP(w, r)
@@ -546,20 +729,19 @@ func TestPublishRequiresPublishScope(t *testing.T) {
 func TestDependencyValidation(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	// existing-dep is already in the store (set up in setupTestServer)
 	manifest := `{"name":"dep-user","version":"1.0.0","description":"uses existing-dep","dependencies":{"existing-dep":"^1.0.0"}}`
 	payload := map[string]interface{}{
 		"name":         "dep-user",
 		"version":      "1.0.0",
 		"description":  "uses existing-dep",
 		"download_url": "https://example.com/dep-user-1.0.0.cgp",
-		"sha256":       "hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh",
+		"sha256":       "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
 		"manifest":     json.RawMessage(manifest),
 	}
 	body, _ := json.Marshal(payload)
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "/v1/patches", bytes.NewReader(body))
+	r := testNewRequest("POST", "/v1/patches", bytes.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("Authorization", "Bearer test-token-123")
 	srv.ServeHTTP(w, r)
@@ -572,7 +754,6 @@ func TestDependencyValidation(t *testing.T) {
 func TestDependencyValidationMissingDep(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	// "nonexistent-dep" is not in the store
 	manifest := `{"name":"bad-dep","version":"1.0.0","description":"missing dep","dependencies":{"nonexistent-dep":"^1.0.0"}}`
 	payload := map[string]interface{}{
 		"name":         "bad-dep",
@@ -585,7 +766,7 @@ func TestDependencyValidationMissingDep(t *testing.T) {
 	body, _ := json.Marshal(payload)
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("POST", "/v1/patches", bytes.NewReader(body))
+	r := testNewRequest("POST", "/v1/patches", bytes.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("Authorization", "Bearer test-token-123")
 	srv.ServeHTTP(w, r)

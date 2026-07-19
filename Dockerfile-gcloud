@@ -1,0 +1,9 @@
+FROM google/cloud-sdk:latest
+
+WORKDIR /app
+
+COPY scripts/ ./scripts/
+
+RUN chmod +x scripts/**/*.sh
+
+ENTRYPOINT ["scripts/google-cloud/setup-project.sh"]

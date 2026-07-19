@@ -10,26 +10,47 @@ import (
 )
 
 type Package struct {
-	Name             string   `json:"name"`
-	Version          string   `json:"version"`
-	Description      string   `json:"description,omitempty"`
-	Author           string   `json:"author,omitempty"`
-	License          string   `json:"license,omitempty"`
-	SourceRepository string   `json:"source_repository,omitempty"`
-	SourceIssues     string   `json:"source_issues,omitempty"`
-	DownloadURL      string   `json:"download_url,omitempty"`
-	Size             int64    `json:"size,omitempty"`
-	SHA256           string   `json:"sha256,omitempty"`
-	Status           string   `json:"status,omitempty"`
-	Downloads        int64    `json:"downloads,omitempty"`
-	CreatedAt        string   `json:"created_at,omitempty"`
-	UpdatedAt        string   `json:"updated_at,omitempty"`
-	Tags             []string `json:"tags,omitempty"`
-	Manifest         string   `json:"manifest,omitempty"`
+	Name             string            `json:"name"`
+	Version          string            `json:"version"`
+	Description      string            `json:"description,omitempty"`
+	Author           string            `json:"author,omitempty"`
+	License          string            `json:"license,omitempty"`
+	SourceRepository string            `json:"source_repository,omitempty"`
+	SourceIssues     string            `json:"source_issues,omitempty"`
+	DownloadURL      string            `json:"download_url,omitempty"`           // v1 compat (deprecated)
+	DownloadURLs     map[string]string `json:"download_urls,omitempty"`          // v2: variant-keyed URLs
+	Size             int64             `json:"size,omitempty"`
+	ChecksumSHA256   string            `json:"checksum_sha256,omitempty"`
+	Status           string            `json:"status,omitempty"`
+	Downloads        int64             `json:"downloads,omitempty"`
+	CreatedAt        string            `json:"created_at,omitempty"`
+	UpdatedAt        string            `json:"updated_at,omitempty"`
+	Tags             []string          `json:"tags,omitempty"`
+	Capabilities     []string          `json:"capabilities,omitempty"`
+	Manifest         string            `json:"manifest,omitempty"`
+	Publisher        string            `json:"publisher_fingerprint,omitempty"`
+	Hardware         *HardwareReqs     `json:"hardware_requirements,omitempty"`
+}
+
+type HardwareReqs struct {
+	MinRAMMB     int  `json:"min_ram_mb,omitempty"`
+	MinStorageMB int  `json:"min_storage_mb,omitempty"`
+	NPURequired  bool `json:"npu_required,omitempty"`
+}
+
+type SearchOptions struct {
+	License    string
+	Capability string
+	Author     string
+	Exact      bool
+	MinRAM     int
+	Page       int
+	PerPage    int
 }
 
 type Store interface {
 	Search(query string) ([]Package, error)
+	SearchFiltered(query string, opts SearchOptions) ([]Package, int, error)
 	Get(name, version string) (Package, error)
 	Put(pkg Package) error
 	Delete(name, version string) error
@@ -79,6 +100,91 @@ func (s *MemoryStore) Search(query string) ([]Package, error) {
 		return results[i].Name < results[j].Name
 	})
 	return results, nil
+}
+
+func (s *MemoryStore) SearchFiltered(query string, opts SearchOptions) ([]Package, int, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	q := strings.ToLower(query)
+	var matched []Package
+
+	for _, pkg := range s.data {
+		if q != "" {
+			nameMatch := strings.Contains(strings.ToLower(pkg.Name), q)
+			descMatch := strings.Contains(strings.ToLower(pkg.Description), q)
+			tagMatch := false
+			for _, tag := range pkg.Tags {
+				if strings.Contains(strings.ToLower(tag), q) {
+					tagMatch = true
+					break
+				}
+			}
+			if opts.Exact {
+				if !nameMatch {
+					continue
+				}
+			} else {
+				if !nameMatch && !descMatch && !tagMatch {
+					continue
+				}
+			}
+		}
+
+		if opts.License != "" && !strings.EqualFold(pkg.License, opts.License) {
+			continue
+		}
+		if opts.Author != "" && !strings.Contains(strings.ToLower(pkg.Author), strings.ToLower(opts.Author)) {
+			continue
+		}
+		if opts.Capability != "" {
+			var m struct {
+				Runtime struct {
+					Capabilities []string `json:"capabilities"`
+				} `json:"runtime"`
+			}
+			if err := json.Unmarshal([]byte(pkg.Manifest), &m); err == nil {
+				found := false
+				for _, c := range m.Runtime.Capabilities {
+					if strings.EqualFold(c, opts.Capability) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					continue
+				}
+			} else {
+				continue
+			}
+		}
+
+		matched = append(matched, pkg)
+	}
+
+	sort.Slice(matched, func(i, j int) bool {
+		return matched[i].Name < matched[j].Name
+	})
+
+	total := len(matched)
+
+	if opts.Page < 1 {
+		opts.Page = 1
+	}
+	if opts.PerPage < 1 {
+		opts.PerPage = 20
+	}
+
+	start := (opts.Page - 1) * opts.PerPage
+	if start >= len(matched) {
+		return []Package{}, total, nil
+	}
+	end := start + opts.PerPage
+	if end > len(matched) {
+		end = len(matched)
+	}
+
+	return matched[start:end], total, nil
 }
 
 func (s *MemoryStore) Get(name, version string) (Package, error) {
