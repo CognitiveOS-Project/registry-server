@@ -19,8 +19,8 @@ type Client struct {
 }
 
 func NewClient() *Client {
-	token := os.Getenv("GITHUB_TOKEN")
-	org := os.Getenv("GITHUB_ORG")
+	token := os.Getenv("REGISTRY_GH_TOKEN")
+	org := os.Getenv("REGISTRY_GH_ORG")
 	if org == "" {
 		org = "CognitiveOS-CGP-Packages"
 	}
@@ -177,7 +177,7 @@ type PublishResult struct {
 
 func (c *Client) PublishPackage(name, version, description string, cgpData []byte) (*PublishResult, error) {
 	if !c.Enabled() {
-		return nil, fmt.Errorf("GitHub integration not configured (GITHUB_TOKEN not set)")
+		return nil, fmt.Errorf("GitHub integration not configured (REGISTRY_GH_TOKEN not set)")
 	}
 
 	exists, err := c.repoExists(name)

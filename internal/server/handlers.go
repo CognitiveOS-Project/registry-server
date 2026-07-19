@@ -304,7 +304,7 @@ func (s *Server) publishOfficial(urlPath string, w http.ResponseWriter, r *http.
 
 	if s.config.GitHub == nil || !s.config.GitHub.Enabled() {
 		writeErrorJSON(w, http.StatusServiceUnavailable, "GITHUB_NOT_CONFIGURED",
-			"official publish requires GitHub integration (GITHUB_TOKEN not set)")
+			"official publish requires GitHub integration (REGISTRY_GH_TOKEN not set)")
 		return
 	}
 
