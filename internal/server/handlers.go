@@ -1,6 +1,8 @@
 package server
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -344,6 +346,10 @@ func (s *Server) publishOfficial(urlPath string, w http.ResponseWriter, r *http.
 	}
 
 	if req.Manifest != nil && string(req.Manifest) != "null" && string(req.Manifest) != "" {
+		if req.SHA256 == "" {
+			hash := sha256.Sum256(cgpData)
+			req.SHA256 = hex.EncodeToString(hash[:])
+		}
 		vr := validate.Run(req.Manifest, nil, req.SHA256)
 		if !vr.AllPassed() {
 			writeJSON(w, http.StatusUnprocessableEntity, map[string]interface{}{
