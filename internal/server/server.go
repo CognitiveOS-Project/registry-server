@@ -16,6 +16,7 @@ type Config struct {
 	Store     store.Store
 	TokenAuth auth.TokenStore
 	SSHKeys   auth.SSHKeyStore
+	Machines  auth.MachineKeyStore
 	GitHub    *githubclient.Client
 }
 
@@ -69,6 +70,7 @@ func (s *Server) routes() {
 
 	s.mux.HandleFunc("POST /v1/auth/register", s.handleAuthRegister())
 	s.mux.HandleFunc("PUT /v1/auth/status", s.handleAuthStatus())
+	s.mux.HandleFunc("POST /v1/auth/signup", s.handleAuthSignup())
 
 	s.mux.HandleFunc("POST /v1/patches", publishAuth(s.handlePublish()))
 	s.mux.HandleFunc("PUT /v1/patches/{name}/{version}", publishAuth(s.handlePutVersion()))

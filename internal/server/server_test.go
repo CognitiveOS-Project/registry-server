@@ -3,6 +3,9 @@ package server
 import (
 	"bytes"
 	"crypto/ed25519"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -1101,6 +1104,100 @@ func TestAuthStatusMethodNotAllowed(t *testing.T) {
 
 	if w.Code != http.StatusMethodNotAllowed {
 		t.Errorf("expected 405 for GET, got %d", w.Code)
+	}
+}
+
+func TestAuthSignup(t *testing.T) {
+	srv, _ := setupTestServer(t)
+
+	priv, pubBytes := generateTestSSHKey(t)
+
+	// Create profile
+	profile := map[string]interface{}{
+		"hardware": map[string]interface{}{
+			"cpu":    "ARM Cortex-A72",
+			"cores":  4,
+			"arch":   "aarch64",
+			"ram_mb": 8192,
+		},
+		"software": map[string]interface{}{
+			"os":         "linux",
+			"distro":     "CognitiveOS",
+			"cpm_version": "1.0.0",
+		},
+	}
+	profileJSON, _ := json.Marshal(profile)
+
+	// Sign SHA-256 hash of profile using ed25519
+	hash := sha256.Sum256(profileJSON)
+	sig := ed25519.Sign(priv, hash[:])
+
+	// Marshal as SSH wire format
+	wireSig := marshalSSHWire("ssh-ed25519", sig)
+	sigB64 := base64.RawStdEncoding.EncodeToString(wireSig)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"profile":    json.RawMessage(profileJSON),
+		"public_key": string(pubBytes),
+		"signature":  sigB64,
+	})
+
+	w := httptest.NewRecorder()
+	r := testNewRequest("POST", "/v1/auth/signup", bytes.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
+	srv.ServeHTTP(w, r)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	_ = json.NewDecoder(w.Body).Decode(&resp)
+	if resp["status"] != "approved" {
+		t.Errorf("expected status=approved, got %v", resp["status"])
+	}
+	if resp["machine_id"] == nil || resp["machine_id"] == "" {
+		t.Errorf("expected machine_id, got %v", resp["machine_id"])
+	}
+}
+
+func marshalSSHWire(format string, sigBytes []byte) []byte {
+	formatBytes := []byte(format)
+	formatLen := make([]byte, 4)
+	binary.BigEndian.PutUint32(formatLen, uint32(len(formatBytes)))
+
+	blobLen := make([]byte, 4)
+	binary.BigEndian.PutUint32(blobLen, uint32(len(sigBytes)))
+
+	result := make([]byte, 0, 8+len(formatBytes)+len(sigBytes))
+	result = append(result, formatLen...)
+	result = append(result, formatBytes...)
+	result = append(result, blobLen...)
+	result = append(result, sigBytes...)
+	return result
+}
+
+func TestAuthSignupInvalidSignature(t *testing.T) {
+	srv, _ := setupTestServer(t)
+
+	_, pubBytes := generateTestSSHKey(t)
+
+	profile := map[string]interface{}{"hardware": map[string]interface{}{"cpu": "test"}}
+	profileJSON, _ := json.Marshal(profile)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"profile":    json.RawMessage(profileJSON),
+		"public_key": string(pubBytes),
+		"signature":  "invalidsig",
+	})
+
+	w := httptest.NewRecorder()
+	r := testNewRequest("POST", "/v1/auth/signup", bytes.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
+	srv.ServeHTTP(w, r)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 for invalid signature, got %d: %s", w.Code, w.Body.String())
 	}
 }
 

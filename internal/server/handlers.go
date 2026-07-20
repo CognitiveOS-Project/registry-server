@@ -2,6 +2,7 @@ package server
 
 import (
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -13,8 +14,10 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/CognitiveOS-Project/registry-server/internal/auth"
 	"github.com/CognitiveOS-Project/registry-server/internal/store"
 	"github.com/CognitiveOS-Project/registry-server/internal/validate"
+	"golang.org/x/crypto/ssh"
 )
 
 func (s *Server) handleHealth() http.HandlerFunc {
@@ -794,6 +797,90 @@ func (s *Server) handleAuthStatus() http.HandlerFunc {
 			"fingerprint":   info.Fingerprint,
 			"registered":    true,
 			"registered_at": info.Registered.Format(time.RFC3339),
+		})
+	}
+}
+
+func (s *Server) handleAuthSignup() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeErrorJSON(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED",
+				"POST required")
+			return
+		}
+
+		var req struct {
+			Profile   json.RawMessage `json:"profile"`
+			PublicKey string          `json:"public_key"`
+			Signature string          `json:"signature"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeErrorJSON(w, http.StatusBadRequest, "VALIDATION_FAILED",
+				"invalid JSON: "+err.Error())
+			return
+		}
+
+		if req.PublicKey == "" || req.Signature == "" || len(req.Profile) == 0 {
+			writeErrorJSON(w, http.StatusBadRequest, "VALIDATION_FAILED",
+				"profile, public_key, and signature are required")
+			return
+		}
+
+		pubKeyObj, _, _, _, err := ssh.ParseAuthorizedKey([]byte(req.PublicKey))
+		if err != nil {
+			writeErrorJSON(w, http.StatusBadRequest, "VALIDATION_FAILED",
+				"invalid public key: "+err.Error())
+			return
+		}
+
+		sigBytes, err := base64.RawStdEncoding.DecodeString(req.Signature)
+		if err != nil {
+			writeErrorJSON(w, http.StatusBadRequest, "VALIDATION_FAILED",
+				"invalid signature encoding: "+err.Error())
+			return
+		}
+
+		format, rest := auth.ReadSSHString(sigBytes)
+		blob, _ := auth.ReadSSHString(rest)
+		sig := &ssh.Signature{
+			Format: string(format),
+			Blob:   blob,
+		}
+
+		hash := sha256.Sum256(req.Profile)
+		if err := pubKeyObj.Verify(hash[:], sig); err != nil {
+			writeErrorJSON(w, http.StatusUnauthorized, "SIGNATURE_INVALID",
+				"signature verification failed: "+err.Error())
+			return
+		}
+
+		machineID := auth.MachineIDFromPublicKey(pubKeyObj)
+
+		profile := &auth.MachineProfile{
+			MachineID: machineID,
+			Owner: auth.OwnerProfile{
+				PublicKey:   req.PublicKey,
+				Fingerprint: auth.Fingerprint(pubKeyObj),
+			},
+			SubmittedAt: time.Now().UTC(),
+		}
+		if err := json.Unmarshal(req.Profile, &profile.Hardware); err != nil {
+		}
+
+		status := &auth.MachineSignupStatus{
+			MachineID:   machineID,
+			Status:      "approved",
+			SubmittedAt: time.Now().UTC(),
+		}
+
+		if s.config.Machines != nil {
+			_ = s.config.Machines.SaveProfile(profile)
+			_ = s.config.Machines.SaveStatus(status)
+		}
+
+		writeJSON(w, http.StatusCreated, map[string]interface{}{
+			"machine_id": machineID,
+			"status":     status.Status,
 		})
 	}
 }

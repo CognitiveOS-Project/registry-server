@@ -47,7 +47,7 @@ func NewMemorySSHKeyStore() *MemorySSHKeyStore {
 	}
 }
 
-func fingerprint(pubKey ssh.PublicKey) string {
+func Fingerprint(pubKey ssh.PublicKey) string {
 	hash := sha256.Sum256(pubKey.Marshal())
 	return "SHA256:" + base64.RawStdEncoding.EncodeToString(hash[:])
 }
@@ -58,7 +58,7 @@ func (s *MemorySSHKeyStore) Register(publicKey string) (*SSHKeyInfo, error) {
 		return nil, fmt.Errorf("invalid public key: %w", err)
 	}
 
-	fp := fingerprint(pubKeyObj)
+	fp := Fingerprint(pubKeyObj)
 
 	info := &SSHKeyInfo{
 		Fingerprint: fp,
@@ -103,8 +103,8 @@ func (s *MemorySSHKeyStore) VerifySignature(fingerprint, signatureB64 string, da
 		return fmt.Errorf("invalid signature encoding: %w", err)
 	}
 
-	format, rest := readSSHString(sigBytes)
-	blob, _ := readSSHString(rest)
+	format, rest := ReadSSHString(sigBytes)
+	blob, _ := ReadSSHString(rest)
 
 	sig := &ssh.Signature{
 		Format: string(format),
@@ -118,7 +118,7 @@ func (s *MemorySSHKeyStore) VerifySignature(fingerprint, signatureB64 string, da
 	return nil
 }
 
-func readSSHString(data []byte) ([]byte, []byte) {
+func ReadSSHString(data []byte) ([]byte, []byte) {
 	if len(data) < 4 {
 		return nil, nil
 	}
