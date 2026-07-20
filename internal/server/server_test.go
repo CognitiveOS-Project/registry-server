@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,6 +14,7 @@ import (
 	"github.com/CognitiveOS-Project/registry-server/internal/auth"
 	githubclient "github.com/CognitiveOS-Project/registry-server/internal/github"
 	"github.com/CognitiveOS-Project/registry-server/internal/store"
+	"golang.org/x/crypto/ssh"
 )
 
 func setupTestServer(t *testing.T) (*Server, string) {
@@ -1022,4 +1024,100 @@ func TestOfficialPublishMissingCGP(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected 400 for missing cgp, got %d: %s", w.Code, w.Body.String())
 	}
+}
+
+func TestAuthStatusRegistered(t *testing.T) {
+	srv, _ := setupTestServer(t)
+
+	// Generate a real ed25519 key pair for testing
+	_, pubKeyBytes := generateTestSSHKey(t)
+	info, err := srv.config.SSHKeys.Register(string(pubKeyBytes))
+	if err != nil {
+		t.Fatalf("failed to register key: %v", err)
+	}
+
+	fp := info.Fingerprint
+
+	body, _ := json.Marshal(map[string]string{"fingerprint": fp})
+	w := httptest.NewRecorder()
+	r := testNewRequest("PUT", "/v1/auth/status", bytes.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
+	srv.ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	_ = json.NewDecoder(w.Body).Decode(&resp)
+	if resp["registered"] != true {
+		t.Errorf("expected registered=true, got %v", resp["registered"])
+	}
+	if resp["fingerprint"] != fp {
+		t.Errorf("expected fingerprint %s, got %v", fp, resp["fingerprint"])
+	}
+}
+
+func TestAuthStatusNotRegistered(t *testing.T) {
+	srv, _ := setupTestServer(t)
+
+	body, _ := json.Marshal(map[string]string{"fingerprint": "SHA256:nonexistent"})
+	w := httptest.NewRecorder()
+	r := testNewRequest("PUT", "/v1/auth/status", bytes.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
+	srv.ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	_ = json.NewDecoder(w.Body).Decode(&resp)
+	if resp["registered"] != false {
+		t.Errorf("expected registered=false, got %v", resp["registered"])
+	}
+}
+
+func TestAuthStatusMissingFingerprint(t *testing.T) {
+	srv, _ := setupTestServer(t)
+
+	body, _ := json.Marshal(map[string]string{})
+	w := httptest.NewRecorder()
+	r := testNewRequest("PUT", "/v1/auth/status", bytes.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
+	srv.ServeHTTP(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for missing fingerprint, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestAuthStatusMethodNotAllowed(t *testing.T) {
+	srv, _ := setupTestServer(t)
+
+	w := httptest.NewRecorder()
+	r := testNewRequest("GET", "/v1/auth/status", nil)
+	srv.ServeHTTP(w, r)
+
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected 405 for GET, got %d", w.Code)
+	}
+}
+
+func generateTestSSHKey(t *testing.T) (ed25519.PrivateKey, []byte) {
+	t.Helper()
+	pub, priv, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatalf("failed to generate key: %v", err)
+	}
+
+	sshPubKey, err := ssh.NewPublicKey(pub)
+	if err != nil {
+		t.Fatalf("failed to create SSH public key: %v", err)
+	}
+
+	pubBytes := ssh.MarshalAuthorizedKey(sshPubKey)
+
+	_ = priv
+	return priv, pubBytes
 }

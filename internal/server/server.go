@@ -68,6 +68,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v1/notary/check", s.handleNotaryCheck())
 
 	s.mux.HandleFunc("POST /v1/auth/register", s.handleAuthRegister())
+	s.mux.HandleFunc("PUT /v1/auth/status", s.handleAuthStatus())
 
 	s.mux.HandleFunc("POST /v1/patches", publishAuth(s.handlePublish()))
 	s.mux.HandleFunc("PUT /v1/patches/{name}/{version}", publishAuth(s.handlePutVersion()))

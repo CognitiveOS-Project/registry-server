@@ -758,6 +758,46 @@ func (s *Server) handleAuthRegister() http.HandlerFunc {
 	}
 }
 
+func (s *Server) handleAuthStatus() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			writeErrorJSON(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED",
+				"PUT required")
+			return
+		}
+
+		var req struct {
+			Fingerprint string `json:"fingerprint"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeErrorJSON(w, http.StatusBadRequest, "VALIDATION_FAILED",
+				"invalid JSON: "+err.Error())
+			return
+		}
+
+		if req.Fingerprint == "" {
+			writeErrorJSON(w, http.StatusBadRequest, "VALIDATION_FAILED",
+				"fingerprint is required")
+			return
+		}
+
+		info, err := s.config.SSHKeys.GetByFingerprint(req.Fingerprint)
+		if err != nil {
+			writeJSON(w, http.StatusOK, map[string]interface{}{
+				"fingerprint": req.Fingerprint,
+				"registered":  false,
+			})
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"fingerprint":   info.Fingerprint,
+			"registered":    true,
+			"registered_at": info.Registered.Format(time.RFC3339),
+		})
+	}
+}
+
 func (s *Server) handleNotaryCheck() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		source := r.URL.Query().Get("source")
