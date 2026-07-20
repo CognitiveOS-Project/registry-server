@@ -56,7 +56,7 @@ The server applies layered defense:
 
 1. **User-Agent filtering** — blocks empty or known-malicious User-Agents
 2. **Path probing protection** — blocks `.env`, `.git`, `wp-admin`, and similar paths
-3. **Request size limits** — 1 MB max body size
+3. **Request size limits** — 32 MB max body size
 
 ## Configuration
 
@@ -72,6 +72,8 @@ Environment variables:
 | `S3_SECRET_KEY` | — | S3 secret access key |
 | `S3_REGION` | `auto` | S3 region |
 | `BASE_DOMAIN` | `cognitive-os.org` | Base domain for URLs |
+| `REGISTRY_GH_TOKEN` | — | GitHub PAT for creating releases |
+| `REGISTRY_GH_ORG` | — | GitHub org for package releases |
 
 Command-line flags override env vars:
 
@@ -176,6 +178,8 @@ Go to [github.com/CognitiveOS-Project/registry-server](https://github.com/Cognit
 | `R2_BUCKET` | Cloudflare R2 dashboard | R2 bucket name (default: `cognitiveos-registry`) |
 | `R2_ACCESS_KEY` | Cloudflare R2 API tokens | Access Key ID |
 | `R2_SECRET_KEY` | Cloudflare R2 API tokens | Secret Access Key |
+| `REGISTRY_GH_TOKEN` | GitHub Settings → Developer settings | Classic PAT with `repo` scope |
+| `REGISTRY_GH_ORG` | GitHub | Target org name (e.g., `CognitiveOS-CGP-Packages`) |
 
 **Clean up the local key file after adding to GitHub:**
 
