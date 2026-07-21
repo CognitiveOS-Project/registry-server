@@ -12,6 +12,7 @@ import (
 )
 
 var (
+	landingTmpl   = template.Must(template.ParseFS(templates.TemplateFS, "landing.html"))
 	dashboardTmpl = template.Must(template.ParseFS(templates.TemplateFS, "dashboard.html"))
 )
 
@@ -32,12 +33,23 @@ func NewUIHandlers(oauth *auth.GitHubOAuth, owners auth.OwnerStore, keys auth.SS
 }
 
 func (u *UIHandlers) registerRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("/ui/login", u.handleLogin)
-	mux.HandleFunc("/ui/callback", u.handleCallback)
-	mux.HandleFunc("/ui/logout", u.handleLogout)
-	mux.HandleFunc("/ui/dashboard", u.Session.RequireSession(u.handleDashboard))
-	mux.HandleFunc("/ui/keys/add", u.Session.RequireSession(u.handleAddKey))
-	mux.HandleFunc("/ui/keys/", u.handleKeyAction)
+	mux.HandleFunc("GET /ui/", u.handleLanding)
+	mux.HandleFunc("GET /ui/login", u.handleLogin)
+	mux.HandleFunc("GET /ui/callback", u.handleCallback)
+	mux.HandleFunc("GET /ui/logout", u.handleLogout)
+	mux.HandleFunc("GET /ui/dashboard", u.Session.RequireSession(u.handleDashboard))
+	mux.HandleFunc("POST /ui/keys/add", u.Session.RequireSession(u.handleAddKey))
+	mux.HandleFunc("GET /ui/keys/", u.handleKeyAction)
+}
+
+func (u *UIHandlers) handleLanding(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/ui/" {
+		http.NotFound(w, r)
+		return
+	}
+	if err := landingTmpl.Execute(w, nil); err != nil {
+		log.Printf("render landing: %v", err)
+	}
 }
 
 func (u *UIHandlers) handleLogin(w http.ResponseWriter, r *http.Request) {
