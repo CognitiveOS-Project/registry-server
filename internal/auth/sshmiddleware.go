@@ -65,7 +65,8 @@ func RequireSSHAuth(sshKeys SSHKeyStore, requiredScopes ...string) func(http.Han
 				}
 			}
 
-			next(w, r)
+			ctx := ContextWithFingerprint(r.Context(), fingerprint)
+			next(w, r.WithContext(ctx))
 		}
 	}
 }

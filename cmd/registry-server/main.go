@@ -79,13 +79,47 @@ func main() {
 		log.Printf("GitHub: integration disabled (GITHUB_TOKEN not set)")
 	}
 
+	var owners auth.OwnerStore
+	if s3Endpoint := os.Getenv("S3_ENDPOINT"); s3Endpoint != "" {
+		log.Printf("Using S3 owner store")
+		owners = auth.NewS3OwnerStore(nil, envOrDefault("S3_BUCKET", "cognitiveos-registry"), "auth/owners")
+	} else {
+		log.Printf("Using in-memory owner store")
+		owners = auth.NewMemoryOwnerStore()
+	}
+
+	var sessionMiddleware *server.SessionMiddleware
+	sessionSecret := os.Getenv("SESSION_SECRET")
+	if sessionSecret != "" {
+		sessionMiddleware = server.NewSessionMiddleware([]byte(sessionSecret))
+		log.Printf("Web UI: session enabled")
+	} else {
+		sessionMiddleware = server.NewSessionMiddleware(nil)
+		log.Printf("Web UI: session enabled (random secret)")
+	}
+
+	var uiHandlers *server.UIHandlers
+	githubClientID := os.Getenv("GITHUB_CLIENT_ID")
+	githubClientSecret := os.Getenv("GITHUB_CLIENT_SECRET")
+	if githubClientID != "" && githubClientSecret != "" {
+		redirectURL := envOrDefault("GITHUB_REDIRECT_URL", "http://localhost:8080/ui/callback")
+		oauth := auth.NewGitHubOAuth(githubClientID, githubClientSecret, redirectURL)
+		uiHandlers = server.NewUIHandlers(oauth, owners, sshKeys, sessionMiddleware)
+		log.Printf("Web UI: GitHub OAuth enabled (redirect=%s)", redirectURL)
+	} else {
+		log.Printf("Web UI: GitHub OAuth disabled (GITHUB_CLIENT_ID not set)")
+	}
+
 	cfg := server.Config{
 		Addr:      *addr,
 		DataDir:   dd,
 		Store:     st,
 		TokenAuth: tokenStore,
 		SSHKeys:   sshKeys,
+		Owners:    owners,
 		GitHub:    ghClient,
+		Session:   sessionMiddleware,
+		UI:        uiHandlers,
 	}
 
 	srv := server.New(cfg)

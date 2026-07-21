@@ -254,7 +254,7 @@ func (s *Server) publishProxy(urlPath string, w http.ResponseWriter, r *http.Req
 			"invalid JSON: "+err.Error())
 		return
 	}
-	s.processPublish(urlPath, req, w)
+	s.processPublish(urlPath, req, w, r)
 }
 
 func (s *Server) publishOfficial(urlPath string, w http.ResponseWriter, r *http.Request) {
@@ -410,7 +410,7 @@ func (s *Server) publishOfficial(urlPath string, w http.ResponseWriter, r *http.
 	})
 }
 
-func (s *Server) processPublish(urlPath string, req publishRequest, w http.ResponseWriter) {
+func (s *Server) processPublish(urlPath string, req publishRequest, w http.ResponseWriter, r *http.Request) {
 	if req.Name == "" || req.Version == "" {
 		writeErrorJSON(w, http.StatusBadRequest, "VALIDATION_FAILED",
 			"name and version are required")
@@ -427,6 +427,18 @@ func (s *Server) processPublish(urlPath string, req publishRequest, w http.Respo
 		writeErrorJSON(w, http.StatusBadRequest, "VALIDATION_FAILED",
 			"sha256 is required")
 		return
+	}
+
+	if s.config.Owners != nil {
+		if fp, ok := auth.FingerprintFromContext(r.Context()); ok {
+			if _, key, err := s.config.Owners.GetByKey(fp); err == nil && key != nil {
+				if key.Status == "revoked" {
+					writeErrorJSON(w, http.StatusForbidden, "KEY_REVOKED",
+						"this machine key has been revoked by the owner")
+					return
+				}
+			}
+		}
 	}
 
 	if urlPath != "" {

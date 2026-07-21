@@ -11,13 +11,16 @@ import (
 )
 
 type Config struct {
-	Addr      string
-	DataDir   string
-	Store     store.Store
-	TokenAuth auth.TokenStore
-	SSHKeys   auth.SSHKeyStore
-	Machines  auth.MachineKeyStore
-	GitHub    *githubclient.Client
+	Addr       string
+	DataDir    string
+	Store      store.Store
+	TokenAuth  auth.TokenStore
+	SSHKeys    auth.SSHKeyStore
+	Machines   auth.MachineKeyStore
+	Owners     auth.OwnerStore
+	GitHub     *githubclient.Client
+	Session    *SessionMiddleware
+	UI         *UIHandlers
 }
 
 type Server struct {
@@ -79,6 +82,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /v1/patches/{name}/{version}/validate", adminAuth(s.handleValidate()))
 
 	s.mux.HandleFunc("POST /v1/patches/{name}/{version}/unlock", s.handleUnlock())
+
+	if s.config.UI != nil {
+		s.config.UI.registerRoutes(s.mux)
+	}
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
