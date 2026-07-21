@@ -877,6 +877,7 @@ func (s *Server) handleAuthSignup() http.HandlerFunc {
 			SubmittedAt: time.Now().UTC(),
 		}
 		if err := json.Unmarshal(req.Profile, &profile.Hardware); err != nil {
+			log.Printf("warning: failed to unmarshal hardware profile: %v", err)
 		}
 
 		status := &auth.MachineSignupStatus{
