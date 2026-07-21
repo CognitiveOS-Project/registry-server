@@ -8,6 +8,11 @@ import (
 	"net/http"
 
 	"github.com/CognitiveOS-Project/registry-server/internal/auth"
+	"github.com/CognitiveOS-Project/registry-server/internal/server/templates"
+)
+
+var (
+	dashboardTmpl = template.Must(template.ParseFS(templates.TemplateFS, "dashboard.html"))
 )
 
 type UIHandlers struct {
@@ -154,19 +159,12 @@ func (u *UIHandlers) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		owner = &auth.Owner{Keys: []auth.OwnerKey{}}
 	}
 
-	tmpl, err := template.ParseFiles("internal/server/templates/dashboard.html")
-	if err != nil {
-		log.Printf("parse dashboard template: %v", err)
-		http.Error(w, "Internal error", http.StatusInternalServerError)
-		return
-	}
-
 	data := map[string]interface{}{
 		"Session": session,
 		"Keys":    owner.Keys,
 	}
 
-	if err := tmpl.Execute(w, data); err != nil {
+	if err := dashboardTmpl.Execute(w, data); err != nil {
 		log.Printf("render dashboard: %v", err)
 	}
 }
@@ -281,13 +279,6 @@ func (u *UIHandlers) renderDashboard(w http.ResponseWriter, session *Session, ms
 		owner = &auth.Owner{Keys: []auth.OwnerKey{}}
 	}
 
-	tmpl, err := template.ParseFiles("internal/server/templates/dashboard.html")
-	if err != nil {
-		log.Printf("parse dashboard template: %v", err)
-		http.Error(w, "Internal error", http.StatusInternalServerError)
-		return
-	}
-
 	data := map[string]interface{}{
 		"Session": session,
 		"Keys":    owner.Keys,
@@ -295,7 +286,7 @@ func (u *UIHandlers) renderDashboard(w http.ResponseWriter, session *Session, ms
 		"Error":   isErr,
 	}
 
-	if err := tmpl.Execute(w, data); err != nil {
+	if err := dashboardTmpl.Execute(w, data); err != nil {
 		log.Printf("render dashboard: %v", err)
 	}
 }
