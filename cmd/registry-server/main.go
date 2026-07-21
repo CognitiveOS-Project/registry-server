@@ -89,7 +89,7 @@ func main() {
 	}
 
 	var sessionMiddleware *server.SessionMiddleware
-	sessionSecret := os.Getenv("SESSION_SECRET")
+	sessionSecret := os.Getenv("CRS_SESSION_SECRET")
 	if sessionSecret != "" {
 		sessionMiddleware = server.NewSessionMiddleware([]byte(sessionSecret))
 		log.Printf("Web UI: session enabled")
@@ -99,15 +99,15 @@ func main() {
 	}
 
 	var uiHandlers *server.UIHandlers
-	githubClientID := os.Getenv("GITHUB_CLIENT_ID")
-	githubClientSecret := os.Getenv("GITHUB_CLIENT_SECRET")
+	githubClientID := os.Getenv("CRS_GITHUB_CLIENT_ID")
+	githubClientSecret := os.Getenv("CRS_GITHUB_CLIENT_SECRET")
 	if githubClientID != "" && githubClientSecret != "" {
-		redirectURL := envOrDefault("GITHUB_REDIRECT_URL", "http://localhost:8080/ui/callback")
+		redirectURL := envOrDefault("CRS_GITHUB_REDIRECT_URL", "http://localhost:8080/ui/callback")
 		oauth := auth.NewGitHubOAuth(githubClientID, githubClientSecret, redirectURL)
 		uiHandlers = server.NewUIHandlers(oauth, owners, sshKeys, sessionMiddleware)
 		log.Printf("Web UI: GitHub OAuth enabled (redirect=%s)", redirectURL)
 	} else {
-		log.Printf("Web UI: GitHub OAuth disabled (GITHUB_CLIENT_ID not set)")
+		log.Printf("Web UI: GitHub OAuth disabled (CRS_GITHUB_CLIENT_ID not set)")
 	}
 
 	cfg := server.Config{

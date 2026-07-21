@@ -55,7 +55,7 @@ jobs:
             --concurrency 80 \
             --timeout 300 \
             --allow-unauthenticated \
-            --set-env-vars="S3_ENDPOINT=${{ secrets.R2_ENDPOINT }},S3_BUCKET=${{ secrets.R2_BUCKET }},S3_ACCESS_KEY=${{ secrets.R2_ACCESS_KEY }},S3_SECRET_KEY=${{ secrets.R2_SECRET_KEY }},S3_REGION=auto,BASE_DOMAIN=${{ secrets.BASE_DOMAIN }},REGISTRY_GH_TOKEN=${{ secrets.REGISTRY_GH_TOKEN }},REGISTRY_GH_ORG=${{ secrets.REGISTRY_GH_ORG }}"
+            --set-env-vars="S3_ENDPOINT=${{ secrets.R2_ENDPOINT }},S3_BUCKET=${{ secrets.R2_BUCKET }},S3_ACCESS_KEY=${{ secrets.R2_ACCESS_KEY }},S3_SECRET_KEY=${{ secrets.R2_SECRET_KEY }},S3_REGION=auto,BASE_DOMAIN=${{ secrets.BASE_DOMAIN }},REGISTRY_GH_TOKEN=${{ secrets.REGISTRY_GH_TOKEN }},REGISTRY_GH_ORG=${{ secrets.REGISTRY_GH_ORG }},CRS_GITHUB_CLIENT_ID=${{ secrets.CRS_GITHUB_CLIENT_ID }},CRS_GITHUB_CLIENT_SECRET=${{ secrets.CRS_GITHUB_CLIENT_SECRET }},CRS_SESSION_SECRET=${{ secrets.CRS_SESSION_SECRET }},CRS_GITHUB_REDIRECT_URL=${{ secrets.CRS_GITHUB_REDIRECT_URL }}"
 
       - name: Verify deployment
         run: |
