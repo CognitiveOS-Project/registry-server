@@ -393,6 +393,20 @@ func (s *Server) publishOfficial(urlPath string, w http.ResponseWriter, r *http.
 		Hardware:         req.Hardware,
 	}
 
+	if req.Manifest != nil {
+		var manifest struct {
+			UnlockCodes []string `json:"unlock_codes,omitempty"`
+		}
+		if err := json.Unmarshal(req.Manifest, &manifest); err == nil && len(manifest.UnlockCodes) > 0 {
+			hashed := make([]string, 0, len(manifest.UnlockCodes))
+			for _, code := range manifest.UnlockCodes {
+				h := sha256.Sum256([]byte(code))
+				hashed = append(hashed, hex.EncodeToString(h[:]))
+			}
+			pkg.UnlockCodes = hashed
+		}
+	}
+
 	if err := s.config.Store.Put(pkg); err != nil {
 		writeErrorJSON(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
 		return
@@ -431,12 +445,21 @@ func (s *Server) processPublish(urlPath string, req publishRequest, w http.Respo
 
 	if s.config.Owners != nil {
 		if fp, ok := auth.FingerprintFromContext(r.Context()); ok {
-			if _, key, err := s.config.Owners.GetByKey(fp); err == nil && key != nil {
-				if key.Status == "revoked" {
-					writeErrorJSON(w, http.StatusForbidden, "KEY_REVOKED",
-						"this machine key has been revoked by the owner")
-					return
-				}
+			_, key, err := s.config.Owners.GetByKey(fp)
+			if err != nil || key == nil {
+				writeErrorJSON(w, http.StatusForbidden, "KEY_NOT_CLAIMED",
+					"machine key is not linked to an owner. An owner must link this key through the web UI before publishing")
+				return
+			}
+			if key.Status == "revoked" {
+				writeErrorJSON(w, http.StatusForbidden, "KEY_REVOKED",
+					"this machine key has been revoked by the owner")
+				return
+			}
+			if !key.PublishPermission {
+				writeErrorJSON(w, http.StatusForbidden, "PUBLISH_NOT_AUTHORIZED",
+					"owner has not granted publish permission for this machine")
+				return
 			}
 		}
 	}
@@ -522,6 +545,20 @@ func (s *Server) processPublish(urlPath string, req publishRequest, w http.Respo
 		Capabilities:     req.Capabilities,
 		Manifest:         string(req.Manifest),
 		Hardware:         req.Hardware,
+	}
+
+	if req.Manifest != nil {
+		var manifest struct {
+			UnlockCodes []string `json:"unlock_codes,omitempty"`
+		}
+		if err := json.Unmarshal(req.Manifest, &manifest); err == nil && len(manifest.UnlockCodes) > 0 {
+			hashed := make([]string, 0, len(manifest.UnlockCodes))
+			for _, code := range manifest.UnlockCodes {
+				h := sha256.Sum256([]byte(code))
+				hashed = append(hashed, hex.EncodeToString(h[:]))
+			}
+			pkg.UnlockCodes = hashed
+		}
 	}
 
 	if err := s.config.Store.Put(pkg); err != nil {
@@ -725,12 +762,36 @@ func (s *Server) handleUnlock() http.HandlerFunc {
 			return
 		}
 
-		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"status":  "ok",
-			"name":    name,
-			"version": version,
-			"message": "model unlocked successfully",
-		})
+		pkg, err := s.config.Store.Get(name, version)
+		if err != nil {
+			writeErrorJSON(w, http.StatusNotFound, "NOT_FOUND",
+				fmt.Sprintf("package '%s' version '%s' not found", name, version))
+			return
+		}
+
+		if len(pkg.UnlockCodes) == 0 {
+			writeErrorJSON(w, http.StatusBadRequest, "NO_UNLOCK_REQUIRED",
+				"this package does not require an unlock code")
+			return
+		}
+
+		codeHash := sha256.Sum256([]byte(req.Code))
+		codeHashHex := hex.EncodeToString(codeHash[:])
+
+		for _, stored := range pkg.UnlockCodes {
+			if stored == codeHashHex {
+				writeJSON(w, http.StatusOK, map[string]interface{}{
+					"status":  "ok",
+					"name":    name,
+					"version": version,
+					"message": "model unlocked successfully",
+				})
+				return
+			}
+		}
+
+		writeErrorJSON(w, http.StatusForbidden, "INVALID_UNLOCK_CODE",
+			"the unlock code is invalid")
 	}
 }
 
@@ -882,7 +943,7 @@ func (s *Server) handleAuthSignup() http.HandlerFunc {
 
 		status := &auth.MachineSignupStatus{
 			MachineID:   machineID,
-			Status:      "approved",
+			Status:      "pending",
 			SubmittedAt: time.Now().UTC(),
 		}
 

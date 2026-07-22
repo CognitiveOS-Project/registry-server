@@ -21,11 +21,12 @@ type Owner struct {
 }
 
 type OwnerKey struct {
-	Fingerprint string    `json:"fingerprint"`
-	PublicKey   string    `json:"public_key"`
-	DisplayName string    `json:"display_name"`
-	AddedAt     time.Time `json:"added_at"`
-	Status      string    `json:"status"` // "active", "revoked"
+	Fingerprint       string    `json:"fingerprint"`
+	PublicKey         string    `json:"public_key"`
+	DisplayName       string    `json:"display_name"`
+	AddedAt           time.Time `json:"added_at"`
+	Status            string    `json:"status"`             // "active", "revoked"
+	PublishPermission bool      `json:"publish_permission"` // owner grants per-machine
 }
 
 type OwnerStore interface {
@@ -35,6 +36,7 @@ type OwnerStore interface {
 	AddKey(gitHubID int64, key OwnerKey) error
 	RemoveKey(gitHubID int64, fingerprint string) error
 	SetKeyStatus(gitHubID int64, fingerprint string, status string) error
+	SetPublishPermission(gitHubID int64, fingerprint string, allowed bool) error
 }
 
 type MemoryOwnerStore struct {
@@ -150,6 +152,19 @@ func (s *MemoryOwnerStore) SetKeyStatus(gitHubID int64, fingerprint string, stat
 	return nil
 }
 
+func (s *MemoryOwnerStore) SetPublishPermission(gitHubID int64, fingerprint string, allowed bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	ref, ok := s.ByKey[fingerprint]
+	if !ok || ref.owner.GitHubID != gitHubID {
+		return fmt.Errorf("key not found: %s", fingerprint)
+	}
+
+	ref.key.PublishPermission = allowed
+	return nil
+}
+
 type S3OwnerStore struct {
 	s3Client *s3.Client
 	bucket   string
@@ -261,6 +276,19 @@ func (s *S3OwnerStore) RemoveKey(gitHubID int64, fingerprint string) error {
 
 func (s *S3OwnerStore) SetKeyStatus(gitHubID int64, fingerprint string, status string) error {
 	if err := s.memory.SetKeyStatus(gitHubID, fingerprint, status); err != nil {
+		return err
+	}
+
+	owner, err := s.memory.GetByGitHubID(gitHubID)
+	if err != nil {
+		return err
+	}
+
+	return s.Save(owner)
+}
+
+func (s *S3OwnerStore) SetPublishPermission(gitHubID int64, fingerprint string, allowed bool) error {
+	if err := s.memory.SetPublishPermission(gitHubID, fingerprint, allowed); err != nil {
 		return err
 	}
 

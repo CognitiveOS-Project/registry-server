@@ -30,6 +30,7 @@ type Package struct {
 	Manifest         string            `json:"manifest,omitempty"`
 	Publisher        string            `json:"publisher_fingerprint,omitempty"`
 	Hardware         *HardwareReqs     `json:"hardware_requirements,omitempty"`
+	UnlockCodes      []string          `json:"unlock_codes,omitempty"` // SHA-256 hashes of valid codes
 }
 
 type HardwareReqs struct {

@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -52,6 +53,15 @@ func setupTestServer(t *testing.T) (*Server, string) {
 		Version:     "1.0.0",
 		Description: "An existing dependency",
 		Status:      "active",
+	})
+
+	codeHash := sha256.Sum256([]byte("SECRET123"))
+	_ = memStore.Put(store.Package{
+		Name:        "locked-patch",
+		Version:     "1.0.0",
+		Description: "A locked patch",
+		Status:      "active",
+		UnlockCodes: []string{hex.EncodeToString(codeHash[:])},
 	})
 
 	return New(cfg), dataDir
@@ -132,8 +142,8 @@ func TestSearchNoQuery(t *testing.T) {
 	if len(resp.Results) == 0 {
 		t.Error("expected at least one result with empty query")
 	}
-	if resp.Total != 2 {
-		t.Errorf("expected total 2, got %d", resp.Total)
+	if resp.Total != 3 {
+		t.Errorf("expected total 3, got %d", resp.Total)
 	}
 }
 
@@ -157,8 +167,8 @@ func TestSearchPagination(t *testing.T) {
 	if len(resp.Results) != 1 {
 		t.Errorf("expected 1 result with per_page=1, got %d", len(resp.Results))
 	}
-	if resp.Total != 2 {
-		t.Errorf("expected total 2, got %d", resp.Total)
+	if resp.Total != 3 {
+		t.Errorf("expected total 3, got %d", resp.Total)
 	}
 	if resp.PerPage != 1 {
 		t.Errorf("expected per_page 1, got %d", resp.PerPage)
@@ -666,9 +676,9 @@ func TestValidate(t *testing.T) {
 func TestUnlock(t *testing.T) {
 	srv, _ := setupTestServer(t)
 
-	body := bytes.NewBufferString(`{"code":"CODE123"}`)
+	body := bytes.NewBufferString(`{"code":"SECRET123"}`)
 	w := httptest.NewRecorder()
-	r := testNewRequest("POST", "/v1/patches/test-patch/1.0.0/unlock", body)
+	r := testNewRequest("POST", "/v1/patches/locked-patch/1.0.0/unlock", body)
 	r.Header.Set("Content-Type", "application/json")
 	srv.ServeHTTP(w, r)
 
@@ -681,11 +691,25 @@ func TestUnlock(t *testing.T) {
 	if resp["status"] != "ok" {
 		t.Errorf("expected status ok, got %s", resp["status"])
 	}
-	if resp["name"] != "test-patch" {
-		t.Errorf("expected name test-patch, got %s", resp["name"])
+	if resp["name"] != "locked-patch" {
+		t.Errorf("expected name locked-patch, got %s", resp["name"])
 	}
 	if resp["version"] != "1.0.0" {
 		t.Errorf("expected version 1.0.0, got %s", resp["version"])
+	}
+}
+
+func TestUnlockWrongCode(t *testing.T) {
+	srv, _ := setupTestServer(t)
+
+	body := bytes.NewBufferString(`{"code":"WRONG"}`)
+	w := httptest.NewRecorder()
+	r := testNewRequest("POST", "/v1/patches/locked-patch/1.0.0/unlock", body)
+	r.Header.Set("Content-Type", "application/json")
+	srv.ServeHTTP(w, r)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("expected 403, got %d: %s", w.Code, w.Body.String())
 	}
 }
 
@@ -1153,8 +1177,8 @@ func TestAuthSignup(t *testing.T) {
 
 	var resp map[string]interface{}
 	_ = json.NewDecoder(w.Body).Decode(&resp)
-	if resp["status"] != "approved" {
-		t.Errorf("expected status=approved, got %v", resp["status"])
+	if resp["status"] != "pending" {
+		t.Errorf("expected status=pending, got %v", resp["status"])
 	}
 	if resp["machine_id"] == nil || resp["machine_id"] == "" {
 		t.Errorf("expected machine_id, got %v", resp["machine_id"])

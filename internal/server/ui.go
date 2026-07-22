@@ -274,6 +274,18 @@ func (u *UIHandlers) handleKeyAction(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		u.renderDashboard(w, session, "Key activated", false)
+	case "grant-publish":
+		if err := u.Owners.SetPublishPermission(session.GitHubID, fingerprint, true); err != nil {
+			u.renderDashboard(w, session, "Failed to grant publish permission", true)
+			return
+		}
+		u.renderDashboard(w, session, "Publish permission granted", false)
+	case "revoke-publish":
+		if err := u.Owners.SetPublishPermission(session.GitHubID, fingerprint, false); err != nil {
+			u.renderDashboard(w, session, "Failed to revoke publish permission", true)
+			return
+		}
+		u.renderDashboard(w, session, "Publish permission revoked", false)
 	case "remove":
 		if err := u.Owners.RemoveKey(session.GitHubID, fingerprint); err != nil {
 			u.renderDashboard(w, session, "Failed to remove key", true)
