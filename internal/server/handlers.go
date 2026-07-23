@@ -384,6 +384,27 @@ func (s *Server) publishOfficial(urlPath string, w http.ResponseWriter, r *http.
 		}
 	}
 
+	if s.config.Owners != nil {
+		if fp, ok := auth.FingerprintFromContext(r.Context()); ok {
+			_, key, err := s.config.Owners.GetByKey(fp)
+			if err != nil || key == nil {
+				writeErrorJSON(w, http.StatusForbidden, "KEY_NOT_CLAIMED",
+					"machine key is not linked to an owner. An owner must link this key through the web UI before publishing")
+				return
+			}
+			if key.Status == "revoked" {
+				writeErrorJSON(w, http.StatusForbidden, "KEY_REVOKED",
+					"this machine key has been revoked by the owner")
+				return
+			}
+			if !key.PublishPermission {
+				writeErrorJSON(w, http.StatusForbidden, "PUBLISH_NOT_AUTHORIZED",
+					"owner has not granted publish permission for this machine")
+				return
+			}
+		}
+	}
+
 	result, err := s.config.GitHub.PublishPackage(req.Name, req.Version, req.Description, cgpData)
 	if err != nil {
 		log.Printf("GitHub publish failed: %v", err)

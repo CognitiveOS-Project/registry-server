@@ -245,7 +245,51 @@ func (s *S3OwnerStore) GetByGitHubID(gitHubID int64) (*Owner, error) {
 }
 
 func (s *S3OwnerStore) GetByKey(fingerprint string) (*Owner, *OwnerKey, error) {
-	return s.memory.GetByKey(fingerprint)
+	if owner, key, err := s.memory.GetByKey(fingerprint); err == nil {
+		return owner, key, nil
+	}
+
+	if s.s3Client != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		listResp, err := s.s3Client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket: aws.String(s.bucket),
+			Prefix: aws.String(s.prefix + "/"),
+		})
+		if err != nil {
+			return nil, nil, fmt.Errorf("list owners: %w", err)
+		}
+
+		for _, obj := range listResp.Contents {
+			if !strings.HasSuffix(*obj.Key, "owner.json") {
+				continue
+			}
+			resp, err := s.s3Client.GetObject(ctx, &s3.GetObjectInput{
+				Bucket: aws.String(s.bucket),
+				Key:    obj.Key,
+			})
+			if err != nil {
+				continue
+			}
+			var owner Owner
+			if err := json.NewDecoder(resp.Body).Decode(&owner); err != nil {
+				resp.Body.Close()
+				continue
+			}
+			resp.Body.Close()
+
+			_ = s.memory.Save(&owner)
+
+			for i := range owner.Keys {
+				if owner.Keys[i].Fingerprint == fingerprint {
+					return &owner, &owner.Keys[i], nil
+				}
+			}
+		}
+	}
+
+	return nil, nil, fmt.Errorf("key not linked to any owner: %s", fingerprint)
 }
 
 func (s *S3OwnerStore) AddKey(gitHubID int64, key OwnerKey) error {
