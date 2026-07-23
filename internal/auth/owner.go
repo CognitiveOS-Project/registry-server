@@ -296,6 +296,7 @@ func (s *S3OwnerStore) AddKey(gitHubID int64, key OwnerKey) error {
 	owner, err := s.GetByGitHubID(gitHubID)
 	if err != nil {
 		owner = &Owner{GitHubID: gitHubID}
+		s.memory.Save(owner)
 	}
 
 	if err := s.memory.AddKey(gitHubID, key); err != nil {
