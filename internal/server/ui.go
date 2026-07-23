@@ -3,10 +3,11 @@ package server
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"html/template"
 	"log"
 	"net/http"
-	"net/url"
+	"strings"
 
 	"github.com/CognitiveOS-Project/registry-server/internal/auth"
 	"github.com/CognitiveOS-Project/registry-server/internal/server/templates"
@@ -238,33 +239,26 @@ func (u *UIHandlers) handleKeyAction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	path := r.URL.Path
-	fingerprint := ""
-
-	if len(path) > len("/ui/keys/") {
-		rest := path[len("/ui/keys/"):]
-		actionEnd := len(rest)
-		for i, c := range rest {
-			if c == '/' {
-				actionEnd = i
-				break
-			}
-		}
-		fingerprint = rest[:actionEnd]
-	}
-
-	if fingerprint == "" {
+	rest := strings.TrimPrefix(path, "/ui/keys/")
+	parts := strings.SplitN(rest, "/", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
 		http.Error(w, "Invalid key path", http.StatusBadRequest)
 		return
 	}
 
-	if decoded, err := url.PathUnescape(fingerprint); err == nil {
-		fingerprint = decoded
+	indexStr, action := parts[0], parts[1]
+	index := -1
+	if _, err := fmt.Sscanf(indexStr, "%d", &index); err != nil || index < 0 {
+		http.Error(w, "Invalid key index", http.StatusBadRequest)
+		return
 	}
 
-	action := ""
-	if len(path) > len("/ui/keys/"+fingerprint+"/") {
-		action = path[len("/ui/keys/" + fingerprint + "/"):]
+	owner, err := u.Owners.GetByGitHubID(session.GitHubID)
+	if err != nil || index >= len(owner.Keys) {
+		http.Error(w, "Key not found", http.StatusNotFound)
+		return
 	}
+	fingerprint := owner.Keys[index].Fingerprint
 
 	switch action {
 	case "revoke":
@@ -310,11 +304,11 @@ func (u *UIHandlers) renderDashboard(w http.ResponseWriter, session *Session, ms
 
 	type keyView struct {
 		auth.OwnerKey
-		FingerprintURL string
+		Index int
 	}
 	keys := make([]keyView, len(owner.Keys))
 	for i, k := range owner.Keys {
-		keys[i] = keyView{OwnerKey: k, FingerprintURL: url.PathEscape(k.Fingerprint)}
+		keys[i] = keyView{OwnerKey: k, Index: i}
 	}
 
 	data := map[string]interface{}{
