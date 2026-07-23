@@ -20,46 +20,79 @@ type visitor struct {
 type RateLimiter struct {
 	visitors map[string]*visitor
 	mu       sync.Mutex
-	rate     rate.Limit
-	burst    int
 	global   *rate.Limiter
+	routes   map[string]*routeLimiter
+}
+
+type routeLimiter struct {
+	pattern string
+	rate    rate.Limit
+	burst   int
 }
 
 type RateLimitConfig struct {
-	Rate     rate.Limit
-	Burst    int
-	Global   rate.Limit
-	GlobalBurst int
+	Global       rate.Limit
+	GlobalBurst  int
+	Routes       []RouteLimit
+}
+
+type RouteLimit struct {
+	Pattern string
+	Rate    float64
+	Burst   int
 }
 
 func DefaultRateLimitConfig() RateLimitConfig {
 	return RateLimitConfig{
-		Rate:     rate.Limit(10.0 / 60), // 10 per minute per IP
-		Burst:    10,
-		Global:   rate.Limit(30.0 / 60), // 30 per minute global per IP
+		Global:      rate.Limit(30.0 / 60), // 30 per minute global per IP
 		GlobalBurst: 30,
+		Routes: []RouteLimit{
+			{Pattern: "search", Rate: 100.0 / 60, Burst: 20},      // Read: 100/min
+			{Pattern: "patches", Rate: 100.0 / 60, Burst: 20},     // Read: 100/min
+			{Pattern: "notary", Rate: 30.0 / 60, Burst: 10},       // Notary: 30/min
+			{Pattern: "unlock", Rate: 5.0 / 60, Burst: 5},         // Unlock: 5/min
+			{Pattern: "auth", Rate: 10.0 / 60, Burst: 5},          // Auth: 10/min
+			{Pattern: "download", Rate: 50.0 / 60, Burst: 15},     // Download: 50/min
+		},
 	}
 }
 
 func NewRateLimiter(cfg RateLimitConfig) *RateLimiter {
 	rl := &RateLimiter{
 		visitors: make(map[string]*visitor),
-		rate:     cfg.Rate,
-		burst:    cfg.Burst,
 		global:   rate.NewLimiter(cfg.Global, cfg.GlobalBurst),
+		routes:   make(map[string]*routeLimiter),
+	}
+	for _, r := range cfg.Routes {
+		rl.routes[r.Pattern] = &routeLimiter{
+			pattern: r.Pattern,
+			rate:    rate.Limit(r.Rate),
+			burst:   r.Burst,
+		}
 	}
 	go rl.cleanup()
 	return rl
 }
 
-func (rl *RateLimiter) getVisitor(key string) *rate.Limiter {
+func (rl *RateLimiter) getVisitor(key string, rt *routeLimiter) *rate.Limiter {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 
-	v, exists := rl.visitors[key]
+	compositeKey := key
+	if rt != nil {
+		compositeKey = key + ":" + rt.pattern
+	}
+
+	v, exists := rl.visitors[compositeKey]
 	if !exists {
-		limiter := rate.NewLimiter(rl.rate, rl.burst)
-		rl.visitors[key] = &visitor{limiter: limiter, lastSeen: time.Now()}
+		r := rate.Limit(10.0 / 60)
+		b := 10
+		if rt != nil {
+			r = rt.rate
+			b = rt.burst
+		}
+		limiter := rate.NewLimiter(r, b)
+		rl.visitors[compositeKey] = &visitor{limiter: limiter, lastSeen: time.Now()}
 		return limiter
 	}
 	v.lastSeen = time.Now()
@@ -76,11 +109,20 @@ func (rl *RateLimiter) cleanup() {
 func (rl *RateLimiter) sweep() {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
-	for ip, v := range rl.visitors {
+	for k, v := range rl.visitors {
 		if time.Since(v.lastSeen) > 5*time.Minute {
-			delete(rl.visitors, ip)
+			delete(rl.visitors, k)
 		}
 	}
+}
+
+func (rl *RateLimiter) matchRoute(path string) *routeLimiter {
+	for _, rt := range rl.routes {
+		if strings.Contains(path, rt.pattern) {
+			return rt
+		}
+	}
+	return nil
 }
 
 func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
@@ -91,14 +133,26 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 		}
 
 		key := extractClientKey(r)
-		limiter := rl.getVisitor(key)
+
+		if !rl.global.Allow() {
+			w.Header().Set("Retry-After", "60")
+			writeRateLimitError(w)
+			return
+		}
+
+		rt := rl.matchRoute(r.URL.Path)
+		limiter := rl.getVisitor(key, rt)
 
 		remaining := int(limiter.Tokens()-1)
 		if remaining < 0 {
 			remaining = 0
 		}
 
-		w.Header().Set("X-RateLimit-Limit", "10")
+		limit := 10
+		if rt != nil {
+			limit = rt.burst
+		}
+		w.Header().Set("X-RateLimit-Limit", itoa(limit))
 		w.Header().Set("X-RateLimit-Remaining", itoa(remaining))
 		w.Header().Set("X-RateLimit-Reset", itoa64(time.Now().Add(time.Minute).Unix()))
 

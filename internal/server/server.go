@@ -3,6 +3,7 @@ package server
 import (
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/CognitiveOS-Project/registry-server/internal/auth"
 	githubclient "github.com/CognitiveOS-Project/registry-server/internal/github"
@@ -28,6 +29,7 @@ type Server struct {
 	mux        *http.ServeMux
 	rateLimit  *middleware.RateLimiter
 	antiBot    *middleware.AntiBot
+	startedAt  time.Time
 }
 
 func New(config Config) *Server {
@@ -52,6 +54,7 @@ func New(config Config) *Server {
 		mux:       http.NewServeMux(),
 		rateLimit: middleware.NewRateLimiter(middleware.DefaultRateLimitConfig()),
 		antiBot:   middleware.NewAntiBot(),
+		startedAt: time.Now(),
 	}
 
 	s.routes()

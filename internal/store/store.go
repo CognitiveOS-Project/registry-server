@@ -40,13 +40,14 @@ type HardwareReqs struct {
 }
 
 type SearchOptions struct {
-	License    string
-	Capability string
-	Author     string
-	Exact      bool
-	MinRAM     int
-	Page       int
-	PerPage    int
+	License      string
+	Capability   string
+	Author       string
+	Exact        bool
+	MinRAM       int
+	MinStorageMB int
+	Page         int
+	PerPage      int
 }
 
 type Store interface {
@@ -156,6 +157,17 @@ func (s *MemoryStore) SearchFiltered(query string, opts SearchOptions) ([]Packag
 					continue
 				}
 			} else {
+				continue
+			}
+		}
+
+		if opts.MinRAM > 0 {
+			if pkg.Hardware == nil || pkg.Hardware.MinRAMMB < opts.MinRAM {
+				continue
+			}
+		}
+		if opts.MinStorageMB > 0 {
+			if pkg.Hardware == nil || pkg.Hardware.MinStorageMB < opts.MinStorageMB {
 				continue
 			}
 		}

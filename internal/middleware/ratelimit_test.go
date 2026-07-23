@@ -11,10 +11,11 @@ import (
 
 func TestRateLimiterAllowsUnderLimit(t *testing.T) {
 	rl := NewRateLimiter(RateLimitConfig{
-		Rate:     rate.Limit(10.0 / 60),
-		Burst:    10,
-		Global:   rate.Limit(30.0 / 60),
+		Global:      rate.Limit(30.0 / 60),
 		GlobalBurst: 30,
+		Routes: []RouteLimit{
+			{Pattern: "search", Rate: 10.0 / 60, Burst: 10},
+		},
 	})
 
 	handler := rl.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -36,10 +37,11 @@ func TestRateLimiterAllowsUnderLimit(t *testing.T) {
 
 func TestRateLimiterRejectsOverLimit(t *testing.T) {
 	rl := NewRateLimiter(RateLimitConfig{
-		Rate:     rate.Limit(1.0 / 60), // 1 per minute
-		Burst:    1,
-		Global:   rate.Limit(30.0 / 60),
+		Global:      rate.Limit(30.0 / 60),
 		GlobalBurst: 30,
+		Routes: []RouteLimit{
+			{Pattern: "search", Rate: 1.0 / 60, Burst: 1},
+		},
 	})
 
 	handler := rl.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -69,10 +71,11 @@ func TestRateLimiterRejectsOverLimit(t *testing.T) {
 
 func TestRateLimiterSkipsHealth(t *testing.T) {
 	rl := NewRateLimiter(RateLimitConfig{
-		Rate:     rate.Limit(1.0 / 60),
-		Burst:    1,
-		Global:   rate.Limit(1.0 / 60),
+		Global:      rate.Limit(1.0 / 60),
 		GlobalBurst: 1,
+		Routes: []RouteLimit{
+			{Pattern: "search", Rate: 1.0 / 60, Burst: 1},
+		},
 	})
 
 	handler := rl.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -118,10 +121,11 @@ func TestRateLimiterSetsHeaders(t *testing.T) {
 
 func TestRateLimiterIPv6Subnet(t *testing.T) {
 	rl := NewRateLimiter(RateLimitConfig{
-		Rate:     rate.Limit(1.0 / 60),
-		Burst:    1,
-		Global:   rate.Limit(30.0 / 60),
+		Global:      rate.Limit(30.0 / 60),
 		GlobalBurst: 30,
+		Routes: []RouteLimit{
+			{Pattern: "search", Rate: 1.0 / 60, Burst: 1},
+		},
 	})
 
 	handler := rl.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -152,7 +156,7 @@ func TestRateLimiterIPv6Subnet(t *testing.T) {
 func TestRateLimiterCleanup(t *testing.T) {
 	rl := NewRateLimiter(DefaultRateLimitConfig())
 
-	rl.getVisitor("test-ip")
+	rl.getVisitor("test-ip", nil)
 	rl.mu.Lock()
 	rl.visitors["test-ip"].lastSeen = time.Now().Add(-10 * time.Minute)
 	rl.mu.Unlock()

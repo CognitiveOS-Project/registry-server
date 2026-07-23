@@ -272,19 +272,25 @@ func TestGetVersions(t *testing.T) {
 		t.Errorf("expected 200, got %d", w.Code)
 	}
 
-	var versions []struct {
-		Version string `json:"version"`
-		Status  string `json:"status"`
+	var resp struct {
+		Name     string `json:"name"`
+		Versions []struct {
+			Version string `json:"version"`
+			Status  string `json:"status"`
+		} `json:"versions"`
 	}
-	_ = json.NewDecoder(w.Body).Decode(&versions)
-	if len(versions) != 1 {
-		t.Fatalf("expected 1 version, got %d", len(versions))
+	_ = json.NewDecoder(w.Body).Decode(&resp)
+	if resp.Name != "test-patch" {
+		t.Errorf("expected name test-patch, got %s", resp.Name)
 	}
-	if versions[0].Version != "1.0.0" {
-		t.Errorf("expected version 1.0.0, got %s", versions[0].Version)
+	if len(resp.Versions) != 1 {
+		t.Fatalf("expected 1 version, got %d", len(resp.Versions))
 	}
-	if versions[0].Status != "active" {
-		t.Errorf("expected status active, got %s", versions[0].Status)
+	if resp.Versions[0].Version != "1.0.0" {
+		t.Errorf("expected version 1.0.0, got %s", resp.Versions[0].Version)
+	}
+	if resp.Versions[0].Status != "active" {
+		t.Errorf("expected status active, got %s", resp.Versions[0].Status)
 	}
 }
 
@@ -582,7 +588,7 @@ func TestGetDependencies(t *testing.T) {
 		t.Errorf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var resp dependencyTree
+	var resp dependencyResponse
 	_ = json.NewDecoder(w.Body).Decode(&resp)
 	if resp.Name != "test-patch" {
 		t.Errorf("expected test-patch, got %s", resp.Name)
@@ -627,7 +633,7 @@ func TestGetDependenciesTree(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	var resp dependencyTree
+	var resp dependencyResponse
 	_ = json.NewDecoder(w.Body).Decode(&resp)
 	if resp.Name != "root-pkg" {
 		t.Errorf("expected root-pkg, got %s", resp.Name)
@@ -635,14 +641,11 @@ func TestGetDependenciesTree(t *testing.T) {
 	if len(resp.Dependencies) != 1 {
 		t.Fatalf("expected 1 direct dep, got %d", len(resp.Dependencies))
 	}
-	if resp.Dependencies[0].Name != "mid-dep" {
-		t.Errorf("expected mid-dep, got %s", resp.Dependencies[0].Name)
+	if _, ok := resp.Dependencies["mid-dep"]; !ok {
+		t.Errorf("expected mid-dep in dependencies")
 	}
-	if len(resp.Dependencies[0].Dependencies) != 1 {
-		t.Fatalf("expected 1 transitive dep, got %d", len(resp.Dependencies[0].Dependencies))
-	}
-	if resp.Dependencies[0].Dependencies[0].Name != "leaf-dep" {
-		t.Errorf("expected leaf-dep, got %s", resp.Dependencies[0].Dependencies[0].Name)
+	if len(resp.Transitive) != 2 {
+		t.Fatalf("expected 2 transitive deps (mid-dep + leaf-dep), got %d: %v", len(resp.Transitive), resp.Transitive)
 	}
 }
 
@@ -960,8 +963,11 @@ func TestOfficialPublishSuccess(t *testing.T) {
 	if resp["version"] != "1.0.0" {
 		t.Errorf("expected version 1.0.0, got %v", resp["version"])
 	}
-	if resp["download_url"] == nil {
-		t.Error("expected download_url in response")
+	if resp["download_urls"] == nil {
+		t.Error("expected download_urls in response")
+	}
+	if resp["publisher_fingerprint"] == nil {
+		t.Error("expected publisher_fingerprint in response")
 	}
 
 	pkg, err := srv.config.Store.Get("my-pkg", "1.0.0")

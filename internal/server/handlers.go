@@ -12,6 +12,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/CognitiveOS-Project/registry-server/internal/auth"
@@ -25,8 +26,9 @@ func (s *Server) handleHealth() http.HandlerFunc {
 		patchesCount, _ := s.config.Store.List()
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"status":        "healthy",
+			"uptime_seconds": int(time.Since(s.startedAt).Seconds()),
 			"patches_count": len(patchesCount),
-			"version":       "1.1.0",
+			"version":       "2.1.0",
 		})
 	}
 }
@@ -43,6 +45,9 @@ func (s *Server) handleSearch() http.HandlerFunc {
 		}
 		if v := r.URL.Query().Get("min_ram_mb"); v != "" {
 			opts.MinRAM, _ = strconv.Atoi(v)
+		}
+		if v := r.URL.Query().Get("min_storage_mb"); v != "" {
+			opts.MinStorageMB, _ = strconv.Atoi(v)
 		}
 		if v := r.URL.Query().Get("page"); v != "" {
 			opts.Page, _ = strconv.Atoi(v)
@@ -65,26 +70,30 @@ func (s *Server) handleSearch() http.HandlerFunc {
 		}
 
 		type searchResult struct {
-			Name             string   `json:"name"`
-			Version          string   `json:"version"`
-			Description      string   `json:"description"`
-			Author           string   `json:"author,omitempty"`
-			License          string   `json:"license"`
-			ChecksumSHA256   string   `json:"checksum_sha256"`
-			Downloads        int64    `json:"downloads"`
-			Tags             []string `json:"tags,omitempty"`
+			Name                 string         `json:"name"`
+			Version              string         `json:"version"`
+			Description          string         `json:"description"`
+			Author               string         `json:"author,omitempty"`
+			License              string         `json:"license"`
+			SHA256               string         `json:"sha256"`
+			Downloads            int64          `json:"downloads"`
+			HardwareRequirements *store.HardwareReqs `json:"hardware_requirements,omitempty"`
+			Capabilities         []string       `json:"capabilities,omitempty"`
+			PublishedAt          string         `json:"published_at,omitempty"`
 		}
 		items := make([]searchResult, len(results))
 		for i, r := range results {
 			items[i] = searchResult{
-				Name:           r.Name,
-				Version:        r.Version,
-				Description:    r.Description,
-				Author:         r.Author,
-				License:        r.License,
-				ChecksumSHA256: r.ChecksumSHA256,
-				Downloads:      r.Downloads,
-				Tags:           r.Tags,
+				Name:                 r.Name,
+				Version:              r.Version,
+				Description:          r.Description,
+				Author:               r.Author,
+				License:              r.License,
+				SHA256:               r.ChecksumSHA256,
+				Downloads:            r.Downloads,
+				HardwareRequirements: r.Hardware,
+				Capabilities:         r.Capabilities,
+				PublishedAt:          r.CreatedAt,
 			}
 		}
 
@@ -143,18 +152,27 @@ func (s *Server) handleGetVersions() http.HandlerFunc {
 		}
 
 		type versionInfo struct {
-			Version string `json:"version"`
-			Status  string `json:"status"`
+			Version      string            `json:"version"`
+			PublishedAt  string            `json:"published_at,omitempty"`
+			SHA256       string            `json:"sha256,omitempty"`
+			DownloadURLs map[string]string `json:"download_urls,omitempty"`
+			Status       string            `json:"status"`
 		}
 		entries := make([]versionInfo, len(versions))
 		for i, v := range versions {
 			entries[i] = versionInfo{
-				Version: v.Version,
-				Status:  v.Status,
+				Version:      v.Version,
+				PublishedAt:  v.CreatedAt,
+				SHA256:       v.ChecksumSHA256,
+				DownloadURLs: v.DownloadURLs,
+				Status:       v.Status,
 			}
 		}
 
-		writeJSON(w, http.StatusOK, entries)
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"name":     name,
+			"versions": entries,
+		})
 	}
 }
 
@@ -413,14 +431,19 @@ func (s *Server) publishOfficial(urlPath string, w http.ResponseWriter, r *http.
 	}
 
 	log.Printf("Official: published %s v%s (github=%s, sha256=%s)", req.Name, req.Version, result.DownloadURL, pkg.ChecksumSHA256)
+
+	publisherFingerprint := ""
+	if fp, ok := auth.FingerprintFromContext(r.Context()); ok {
+		publisherFingerprint = fp
+	}
+
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
-		"name":          req.Name,
-		"version":       req.Version,
-		"sha256":        pkg.ChecksumSHA256,
-		"download_url":  result.DownloadURL,
-		"download_urls": downloadURLs,
-		"url":           fmt.Sprintf("/v1/patches/%s/%s", req.Name, req.Version),
-		"release_tag":   result.ReleaseTag,
+		"name":                  req.Name,
+		"version":               req.Version,
+		"sha256":                pkg.ChecksumSHA256,
+		"download_urls":         downloadURLs,
+		"publisher_fingerprint": publisherFingerprint,
+		"url":                   fmt.Sprintf("/v1/patches/%s/%s", req.Name, req.Version),
 	})
 }
 
@@ -567,12 +590,19 @@ func (s *Server) processPublish(urlPath string, req publishRequest, w http.Respo
 	}
 
 	log.Printf("Notary: registered %s v%s (sha256=%s)", req.Name, req.Version, pkg.ChecksumSHA256)
+
+	publisherFingerprint := ""
+	if fp, ok := auth.FingerprintFromContext(r.Context()); ok {
+		publisherFingerprint = fp
+	}
+
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
-		"name":          req.Name,
-		"version":       req.Version,
-		"sha256":        pkg.ChecksumSHA256,
-		"download_urls": pkg.DownloadURLs,
-		"url":           fmt.Sprintf("/v1/patches/%s/%s", req.Name, req.Version),
+		"name":                  req.Name,
+		"version":               req.Version,
+		"sha256":                pkg.ChecksumSHA256,
+		"download_urls":         pkg.DownloadURLs,
+		"publisher_fingerprint": publisherFingerprint,
+		"url":                   fmt.Sprintf("/v1/patches/%s/%s", req.Name, req.Version),
 	})
 }
 
@@ -612,10 +642,12 @@ func (s *Server) handleSetStatus() http.HandlerFunc {
 	}
 }
 
-type dependencyTree struct {
-	Name         string           `json:"name"`
-	Version      string           `json:"version"`
-	Dependencies []dependencyTree `json:"dependencies"`
+type dependencyResponse struct {
+	Name         string            `json:"name"`
+	Version      string            `json:"version"`
+	Dependencies map[string]string `json:"dependencies"`
+	Transitive   []string          `json:"transitive"`
+	Status       string            `json:"status"`
 }
 
 func (s *Server) handleGetDependencies() http.HandlerFunc {
@@ -650,22 +682,25 @@ func (s *Server) handleGetDependencies() http.HandlerFunc {
 			}
 		}
 
-		tree := s.resolveDependencyTree(deps, map[string]bool{})
+		if deps == nil {
+			deps = map[string]string{}
+		}
 
-		writeJSON(w, http.StatusOK, dependencyTree{
+		transitive := s.resolveTransitive(deps, map[string]bool{})
+
+		writeJSON(w, http.StatusOK, dependencyResponse{
 			Name:         name,
 			Version:      version,
-			Dependencies: tree,
+			Dependencies: deps,
+			Transitive:   transitive,
+			Status:       pkg.Status,
 		})
 	}
 }
 
-func (s *Server) resolveDependencyTree(deps map[string]string, seen map[string]bool) []dependencyTree {
-	if len(deps) == 0 {
-		return nil
-	}
-	var result []dependencyTree
-	for depName, versionConstraint := range deps {
+func (s *Server) resolveTransitive(deps map[string]string, seen map[string]bool) []string {
+	var result []string
+	for depName := range deps {
 		if seen[depName] {
 			continue
 		}
@@ -677,6 +712,8 @@ func (s *Server) resolveDependencyTree(deps map[string]string, seen map[string]b
 		}
 
 		resolvedVersion := versions[0].Version
+		result = append(result, depName+"@"+resolvedVersion)
+
 		depPkg, err := s.config.Store.Get(depName, resolvedVersion)
 		if err != nil {
 			continue
@@ -692,12 +729,7 @@ func (s *Server) resolveDependencyTree(deps map[string]string, seen map[string]b
 			}
 		}
 
-		_ = versionConstraint
-		result = append(result, dependencyTree{
-			Name:         depName,
-			Version:      resolvedVersion,
-			Dependencies: s.resolveDependencyTree(subDeps, seen),
-		})
+		result = append(result, s.resolveTransitive(subDeps, seen)...)
 	}
 	return result
 }
@@ -988,12 +1020,56 @@ func (s *Server) handleNotaryCheck() http.HandlerFunc {
 
 		storedHash := pkg.ChecksumSHA256
 
+		var downloadURL string
+		if variant != "" && pkg.DownloadURLs != nil {
+			downloadURL = pkg.DownloadURLs[variant]
+		}
+		if downloadURL == "" && pkg.DownloadURLs != nil {
+			downloadURL = pkg.DownloadURLs[""]
+		}
+		if downloadURL == "" {
+			downloadURL = pkg.DownloadURL
+		}
+
+		verified := false
+		var remoteHash string
+		var remoteETag string
+
+		if downloadURL != "" {
+			client := &http.Client{Timeout: 10 * time.Second}
+			resp, err := client.Head(downloadURL)
+			if err == nil {
+				defer resp.Body.Close()
+
+				if etag := resp.Header.Get("ETag"); etag != "" {
+					remoteETag = etag
+				}
+
+				if sha := resp.Header.Get("X-Checksum-Sha256"); sha != "" {
+					remoteHash = sha
+				} else if ct := resp.Header.Get("Content-SHA256"); ct != "" {
+					remoteHash = ct
+				}
+
+				if storedHash != "" && remoteHash != "" {
+					verified = storedHash == remoteHash
+				} else if storedHash != "" && remoteETag != "" {
+					normalized := strings.Trim(remoteETag, "\"")
+					verified = storedHash == normalized
+				} else {
+					verified = resp.StatusCode >= 200 && resp.StatusCode < 400
+				}
+			}
+		}
+
 		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"verified":    true,
+			"verified":    verified,
 			"name":        pkg.Name,
 			"version":     pkg.Version,
 			"variant":     variant,
 			"stored_hash": storedHash,
+			"remote_hash": remoteHash,
+			"remote_etag": remoteETag,
 			"checked_at":  time.Now().UTC().Format(time.RFC3339),
 		})
 	}
@@ -1006,14 +1082,22 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 }
 
 func writeErrorJSON(w http.ResponseWriter, status int, code, message string) {
+	writeErrorJSONWithDetails(w, status, code, message, nil)
+}
+
+func writeErrorJSONWithDetails(w http.ResponseWriter, status int, code, message string, details interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"error": map[string]string{
+	resp := map[string]interface{}{
+		"error": map[string]interface{}{
 			"code":    code,
 			"message": message,
 		},
-	})
+	}
+	if details != nil {
+		resp["error"].(map[string]interface{})["details"] = details
+	}
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 func split2(s, sep string) []string {
