@@ -182,17 +182,17 @@
                     <span class="status-badge status-{{.Status}}">{{.Status}}</span>
                     {{if .PublishPermission}}
                     <span class="status-badge status-active">publish</span>
-                    <a href="/ui/keys/{{.Fingerprint}}/revoke-publish" class="btn btn-danger">Revoke Publish</a>
+                    <a href="/ui/keys/{{.FingerprintURL}}/revoke-publish" class="btn btn-danger">Revoke Publish</a>
                     {{else}}
                     <span class="status-badge" style="background:#484f58;color:#fff">no publish</span>
-                    <a href="/ui/keys/{{.Fingerprint}}/grant-publish" class="btn btn-success">Grant Publish</a>
+                    <a href="/ui/keys/{{.FingerprintURL}}/grant-publish" class="btn btn-success">Grant Publish</a>
                     {{end}}
                     {{if eq .Status "active"}}
-                    <a href="/ui/keys/{{.Fingerprint}}/revoke" class="btn btn-danger">Revoke</a>
+                    <a href="/ui/keys/{{.FingerprintURL}}/revoke" class="btn btn-danger">Revoke</a>
                     {{else}}
-                    <a href="/ui/keys/{{.Fingerprint}}/activate" class="btn btn-success">Activate</a>
+                    <a href="/ui/keys/{{.FingerprintURL}}/activate" class="btn btn-success">Activate</a>
                     {{end}}
-                    <a href="/ui/keys/{{.Fingerprint}}/remove" class="btn btn-danger">Remove</a>
+                    <a href="/ui/keys/{{.FingerprintURL}}/remove" class="btn btn-danger">Remove</a>
                 </div>
             </div>
             {{end}}

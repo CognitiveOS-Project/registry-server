@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"net/url"
 
 	"github.com/CognitiveOS-Project/registry-server/internal/auth"
 	"github.com/CognitiveOS-Project/registry-server/internal/server/templates"
@@ -256,6 +257,10 @@ func (u *UIHandlers) handleKeyAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if decoded, err := url.PathUnescape(fingerprint); err == nil {
+		fingerprint = decoded
+	}
+
 	action := ""
 	if len(path) > len("/ui/keys/"+fingerprint+"/") {
 		action = path[len("/ui/keys/" + fingerprint + "/"):]
@@ -303,9 +308,18 @@ func (u *UIHandlers) renderDashboard(w http.ResponseWriter, session *Session, ms
 		owner = &auth.Owner{Keys: []auth.OwnerKey{}}
 	}
 
+	type keyView struct {
+		auth.OwnerKey
+		FingerprintURL string
+	}
+	keys := make([]keyView, len(owner.Keys))
+	for i, k := range owner.Keys {
+		keys[i] = keyView{OwnerKey: k, FingerprintURL: url.PathEscape(k.Fingerprint)}
+	}
+
 	data := map[string]interface{}{
 		"Session": session,
-		"Keys":    owner.Keys,
+		"Keys":    keys,
 		"Message": msg,
 		"Error":   isErr,
 	}
