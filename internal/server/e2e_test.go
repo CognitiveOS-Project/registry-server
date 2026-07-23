@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -71,40 +69,6 @@ func generateSSHKeyPair(t *testing.T) (string, string, ssh.Signer) {
 		t.Fatalf("failed to create signer: %v", err)
 	}
 	return pubKeyStr, ssh.FingerprintSHA256(sshPubKey), signer
-}
-
-func signBytes(signer ssh.Signer, data []byte) string {
-	hash := sha256.Sum256(data)
-	sig, err := signer.Sign(rand.Reader, hash[:])
-	if err != nil {
-		return ""
-	}
-	wireFormat := marshalSSHSig(sig)
-	return base64.RawStdEncoding.EncodeToString(wireFormat)
-}
-
-func marshalSSHSig(sig *ssh.Signature) []byte {
-	formatBytes := []byte(sig.Format)
-	blobBytes := sig.Blob
-
-	formatLen := make([]byte, 4)
-	formatLen[0] = byte(len(formatBytes) >> 24)
-	formatLen[1] = byte(len(formatBytes) >> 16)
-	formatLen[2] = byte(len(formatBytes) >> 8)
-	formatLen[3] = byte(len(formatBytes))
-
-	blobLen := make([]byte, 4)
-	blobLen[0] = byte(len(blobBytes) >> 24)
-	blobLen[1] = byte(len(blobBytes) >> 16)
-	blobLen[2] = byte(len(blobBytes) >> 8)
-	blobLen[3] = byte(len(blobBytes))
-
-	result := make([]byte, 0, 8+len(formatBytes)+len(blobBytes))
-	result = append(result, formatLen...)
-	result = append(result, formatBytes...)
-	result = append(result, blobLen...)
-	result = append(result, blobBytes...)
-	return result
 }
 
 func TestE2EFullFlow(t *testing.T) {
