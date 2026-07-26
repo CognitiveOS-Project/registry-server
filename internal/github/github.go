@@ -59,12 +59,58 @@ func (c *Client) repoExists(repo string) (bool, error) {
 	return false, fmt.Errorf("GitHub API %d", resp.StatusCode)
 }
 
+func (c *Client) ensureNotEmpty(repo string) error {
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/repos/%s/%s/branches/main", c.BaseURL, c.Org, repo), nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.Token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+
+	if resp.StatusCode == 200 {
+		return nil
+	}
+
+	payload := map[string]interface{}{
+		"message": "Initial commit",
+		"content": "",
+		"branch":  "main",
+	}
+	body, _ := json.Marshal(payload)
+	req, err = http.NewRequest("PUT", fmt.Sprintf("%s/repos/%s/%s/contents/README.md", c.BaseURL, c.Org, repo), bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.Token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err = c.HTTP.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 201 {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("create initial commit: %s", string(respBody))
+	}
+	log.Printf("GitHub: created initial commit in %s/%s", c.Org, repo)
+	return nil
+}
+
 func (c *Client) createRepo(name, description string) error {
 	payload := map[string]interface{}{
 		"name":        name,
 		"description": description,
 		"private":     false,
-		"auto_init":   false,
+		"auto_init":   true,
 	}
 	body, _ := json.Marshal(payload)
 
@@ -188,6 +234,10 @@ func (c *Client) PublishPackage(name, version, description string, cgpData []byt
 		if err := c.createRepo(name, description); err != nil {
 			return nil, fmt.Errorf("create repo: %w", err)
 		}
+	}
+
+	if err := c.ensureNotEmpty(name); err != nil {
+		return nil, fmt.Errorf("ensure repo not empty: %w", err)
 	}
 
 	tag := "v" + version

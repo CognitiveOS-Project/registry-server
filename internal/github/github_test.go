@@ -30,6 +30,11 @@ func TestPublishPackage(t *testing.T) {
 		w.WriteHeader(404)
 	})
 
+	mux.HandleFunc("GET /repos/test-org/hello-world/branches/main", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		json.NewEncoder(w).Encode(map[string]interface{}{"name": "main"})
+	})
+
 	mux.HandleFunc("POST /orgs/test-org/repos", func(w http.ResponseWriter, r *http.Request) {
 		repoCreated = true
 		w.WriteHeader(201)
@@ -99,6 +104,11 @@ func TestPublishPackage_ExistingRepo(t *testing.T) {
 	mux.HandleFunc("GET /repos/test-org/existing-pkg", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
 		json.NewEncoder(w).Encode(map[string]interface{}{"name": "existing-pkg"})
+	})
+
+	mux.HandleFunc("GET /repos/test-org/existing-pkg/branches/main", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		json.NewEncoder(w).Encode(map[string]interface{}{"name": "main"})
 	})
 
 	mux.HandleFunc("POST /orgs/test-org/repos", func(w http.ResponseWriter, r *http.Request) {

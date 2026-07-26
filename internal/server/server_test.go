@@ -916,6 +916,9 @@ func TestOfficialPublishSuccess(t *testing.T) {
 		switch {
 		case r.Method == "GET" && r.URL.Path == "/repos/test-org/my-pkg":
 			w.WriteHeader(404)
+		case r.Method == "GET" && r.URL.Path == "/repos/test-org/my-pkg/branches/main":
+			w.WriteHeader(200)
+			fmt.Fprintf(w, `{"name":"main"}`)
 		case r.Method == "POST" && r.URL.Path == "/orgs/test-org/repos":
 			w.WriteHeader(201)
 			fmt.Fprintf(w, `{"name":"my-pkg"}`)
