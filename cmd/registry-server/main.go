@@ -85,16 +85,21 @@ func main() {
 	}
 
 	var owners auth.OwnerStore
+	var machines auth.MachineKeyStore
 	if s3Endpoint := os.Getenv("S3_ENDPOINT"); s3Endpoint != "" {
 		s3Client, err := newS3Client(s3Endpoint, os.Getenv("S3_ACCESS_KEY"), os.Getenv("S3_SECRET_KEY"), envOrDefault("S3_REGION", "auto"))
 		if err != nil {
-			log.Fatalf("Failed to create S3 client for owner store: %v", err)
+			log.Fatalf("Failed to create S3 client: %v", err)
 		}
+		bucket := envOrDefault("S3_BUCKET", "cognitiveos-registry")
 		log.Printf("Using S3 owner store")
-		owners = auth.NewS3OwnerStore(s3Client, envOrDefault("S3_BUCKET", "cognitiveos-registry"), "auth/owners")
+		owners = auth.NewS3OwnerStore(s3Client, bucket, "auth/owners")
+		log.Printf("Using S3 machine store")
+		machines = auth.NewS3MachineKeyStore(s3Client, bucket, "auth/machines")
 	} else {
 		log.Printf("Using in-memory owner store")
 		owners = auth.NewMemoryOwnerStore()
+		machines = auth.NewMemoryMachineKeyStore()
 	}
 
 	var sessionMiddleware *server.SessionMiddleware
@@ -125,6 +130,7 @@ func main() {
 		Store:     st,
 		TokenAuth: tokenStore,
 		SSHKeys:   sshKeys,
+		Machines:  machines,
 		Owners:    owners,
 		GitHub:    ghClient,
 		Session:   sessionMiddleware,
