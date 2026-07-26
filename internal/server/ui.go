@@ -156,6 +156,11 @@ func (u *UIHandlers) handleLogout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/ui/login", http.StatusSeeOther)
 }
 
+type keyView struct {
+	auth.OwnerKey
+	Index int
+}
+
 func (u *UIHandlers) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -173,9 +178,14 @@ func (u *UIHandlers) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		owner = &auth.Owner{Keys: []auth.OwnerKey{}}
 	}
 
+	keys := make([]keyView, len(owner.Keys))
+	for i, k := range owner.Keys {
+		keys[i] = keyView{OwnerKey: k, Index: i}
+	}
+
 	data := map[string]interface{}{
 		"Session": session,
-		"Keys":    owner.Keys,
+		"Keys":    keys,
 	}
 
 	if err := dashboardTmpl.Execute(w, data); err != nil {
