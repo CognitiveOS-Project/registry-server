@@ -60,7 +60,8 @@ func main() {
 	}
 
 	tokenStore := auth.NewMemoryTokenStore()
-	sshKeys := auth.NewMemorySSHKeyStore()
+	var sshKeys auth.SSHKeyStore
+	sshKeys = auth.NewMemorySSHKeyStore()
 
 	if trustedKeys := os.Getenv("SSH_TRUSTED_KEYS"); trustedKeys != "" {
 		for _, pubKey := range strings.Split(trustedKeys, ",") {
@@ -96,6 +97,8 @@ func main() {
 		owners = auth.NewS3OwnerStore(s3Client, bucket, "auth/owners")
 		log.Printf("Using S3 machine store")
 		machines = auth.NewS3MachineKeyStore(s3Client, bucket, "auth/machines")
+		log.Printf("Using S3 SSH key store")
+		sshKeys = auth.NewS3SSHKeyStore(s3Client, bucket, "auth/keys")
 	} else {
 		log.Printf("Using in-memory owner store")
 		owners = auth.NewMemoryOwnerStore()
