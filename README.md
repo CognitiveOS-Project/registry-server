@@ -14,6 +14,8 @@ CognitiveOS `.cgp` package registry — a Go HTTP server for hosting, searching,
 | GET | `/v1/patches/:name/:version/download` | Download .cgp archive |
 | GET | `/v1/patches/:name/dependencies` | Get dependency graph |
 | GET | `/v1/notary/check` | Check notary checksum |
+| PUT | `/v1/auth/status` | Check key registration status |
+| POST | `/v1/auth/signup` | Submit machine identity profile |
 | POST | `/v1/auth/register` | Register SSH public key |
 | POST | `/v1/patches` | Publish new patch |
 | PUT | `/v1/patches/:name/:version` | Publish new version |
@@ -21,12 +23,42 @@ CognitiveOS `.cgp` package registry — a Go HTTP server for hosting, searching,
 | POST | `/v1/patches/:name/:version/validate` | Validate checksum (admin) |
 | POST | `/v1/patches/:name/:version/unlock` | Unlock paid/supporter patch |
 
+### Publish Paths
+
+The server supports two publish modes:
+
+- **Official** (`Content-Type: multipart/form-data`): Sends the `.cgp` binary to the server, which creates a GitHub Release in your org and uploads the asset. Requires `REGISTRY_GH_TOKEN` and `REGISTRY_GH_ORG`.
+- **Notary proxy** (`Content-Type: application/json`): Registers metadata and download URLs only. The server stores the manifest and redirects downloads to the host.
+
+Both paths require SSH key authentication and owner-gated publish permission.
+
+### Web UI
+
+A browser-based UI is available for managing keys, machines, and publish permissions:
+
+| Route | Description |
+|-------|-------------|
+| `/ui/` | Landing page with project info and login |
+| `/ui/login` | GitHub OAuth login |
+| `/ui/callback` | OAuth callback |
+| `/ui/dashboard` | Key management dashboard |
+| `/ui/logout` | Clear session |
+| `/ui/keys/:index/{activate,revoke,remove,grant-publish,revoke-publish}` | Key actions |
+
 ## Authentication
 
 - **Public:** Read access for search, metadata, and download
-- **Token-based:** Publishing requires a valid token (legacy, still active)
 - **SSH key-based:** Publishers register SSH public keys via `/v1/auth/register`; signatures verified via SSHSIG protocol
-- **Code unlock:** Paid/supporter-only patches use unlock codes
+- **Token-based:** Legacy publishing token (still active, deprecated)
+- **Owner gating:** Published keys are linked to a GitHub account via the Web UI. Three gates are enforced before any publish succeeds:
+  - `KEY_NOT_CLAIMED` — key not linked to an owner
+  - `KEY_REVOKED` — owner or admin revoked the key
+  - `PUBLISH_NOT_AUTHORIZED` — owner has not granted publish permission
+- **Code unlock:** Paid/supporter-only patches use unlock codes verified against SHA-256 hashes stored server-side
+
+## Machine Identity Profiles
+
+`POST /v1/auth/signup` accepts a machine identity profile (hardware, software, network, owner info) signed with the machine's SSH private key. The server stores the profile and status in S3. Keys start as `pending` and become active only after the owner claims them in the Web UI.
 
 ## Rate Limiting
 
@@ -39,7 +71,7 @@ All endpoints are rate-limited per IP. Limits are intentionally restrictive:
 | Notary check | 5 req/min |
 | Publish | 2 req/min |
 | Unlock | 2 req/min |
-| Auth register | 1 req/min |
+| Auth (register, signup, status) | 10 req/min |
 | Healthcheck | exempt |
 | **Global** | **30 req/min** |
 
@@ -72,8 +104,13 @@ Environment variables:
 | `S3_SECRET_KEY` | — | S3 secret access key |
 | `S3_REGION` | `auto` | S3 region |
 | `BASE_DOMAIN` | `cognitive-os.org` | Base domain for URLs |
-| `REGISTRY_GH_TOKEN` | — | GitHub PAT for creating releases |
-| `REGISTRY_GH_ORG` | — | GitHub org for package releases |
+| `REGISTRY_GH_TOKEN` | — | GitHub PAT with `repo` scope for creating releases |
+| `REGISTRY_GH_ORG` | — | GitHub org for package releases (e.g. `CognitiveOS-CGP-Packages`) |
+| `CRS_SESSION_SECRET` | — | HMAC signing key for session cookies (set via GitHub Actions secret) |
+| `CRS_GITHUB_CLIENT_ID` | — | GitHub OAuth App client ID |
+| `CRS_GITHUB_CLIENT_SECRET` | — | GitHub OAuth App client secret |
+| `CRS_GITHUB_REDIRECT_URL` | — | OAuth callback URL |
+| `SSH_TRUSTED_KEYS` | — | Comma-separated `.pub` contents for trusted keys |
 
 Command-line flags override env vars:
 
@@ -135,21 +172,20 @@ This image includes:
 
 Deployment is automated via GitHub Actions. Push to `main` triggers `deploy-cloud-run.yml`.
 
+**Live:** `https://registry-us-all-distros-official.cognitive-os.org`
+
+Custom domain is a Cloud Run domain mapping with Google-managed SSL, routed through Cloudflare DNS (CNAME → `ghs.googlehosted.com`, grey cloud). The URL pattern is:
+
+```
+https://registry-{country}-{distro}-{role}.{BASE_DOMAIN}/v1
+```
+
 #### Step 1: Google Cloud Setup
 
 ```bash
 # Requires: gcloud CLI installed and authenticated
-# See: https://cloud.google.com/sdk/docs/install
 ./scripts/google-cloud/setup-project.sh
 ```
-
-The script will:
-1. Prompt for your GCP project ID (or use current)
-2. Enable Cloud Run, Container Registry, and Cloud Build APIs
-3. Create a `registry-deployer` service account
-4. Grant `roles/run.admin` and `roles/storage.admin`
-5. Generate a JSON key at `/tmp/registry-deployer-key.json`
-6. Print the secrets to add to GitHub
 
 #### Step 2: Cloudflare R2 Setup
 
@@ -157,13 +193,6 @@ The script will:
 # Interactive — guides you through Cloudflare dashboard steps
 ./scripts/cloudflare/setup-r2.sh
 ```
-
-The script will:
-1. Guide you to create an R2 bucket (prompted for name, default: `cognitiveos-registry`)
-2. Configure public access for notary metadata
-3. Create an API token with Object Read & Write
-4. Ask for your R2 Account ID
-5. Print the secrets to add to GitHub
 
 #### Step 3: Add GitHub Secrets
 
@@ -180,12 +209,10 @@ Go to [github.com/CognitiveOS-Project/registry-server](https://github.com/Cognit
 | `R2_SECRET_KEY` | Cloudflare R2 API tokens | Secret Access Key |
 | `REGISTRY_GH_TOKEN` | GitHub Settings → Developer settings | Classic PAT with `repo` scope |
 | `REGISTRY_GH_ORG` | GitHub | Target org name (e.g., `CognitiveOS-CGP-Packages`) |
-
-**Clean up the local key file after adding to GitHub:**
-
-```bash
-rm /tmp/registry-deployer-key.json
-```
+| `CRS_SESSION_SECRET` | `openssl rand -base64 32` | HMAC signing key for sessions |
+| `CRS_GITHUB_CLIENT_ID` | GitHub OAuth App settings | Web UI OAuth client ID |
+| `CRS_GITHUB_CLIENT_SECRET` | GitHub OAuth App settings | Web UI OAuth client secret |
+| `CRS_GITHUB_REDIRECT_URL` | GitHub OAuth App settings | `https://registry-us-all-distros-official.cognitive-os.org/ui/callback` |
 
 #### Step 4: Deploy
 
@@ -219,8 +246,17 @@ make build
 ## Storage
 
 - In-memory store (default)
-- File-backed store with `-sqlite` flag (writes to `DATA_DIR/patches.json`)
 - S3-compatible store via `S3_*` env vars (Cloudflare R2 default)
+
+**S3 object layout:**
+
+| Prefix | Contents |
+|--------|----------|
+| `auth/keys/{fingerprint}.pub` | Registered SSH public keys |
+| `auth/owners/{github_id}/owner.json` | Owner identity and linked keys |
+| `auth/machines/{machine_id}/profile.json` | Machine identity profiles |
+| `auth/machines/{machine_id}/status.json` | Machine registration status |
+| `packages/{name}/{version}/metadata.json` | Package metadata and manifests |
 
 ## Middleware Chain
 
@@ -233,8 +269,15 @@ Request → CORS → AntiBot → RateLimit → Auth (per-route) → Handler
 - S3-compatible interface (Cloudflare R2 default, configurable via `S3_*` env vars)
 - SSH public key authentication for publishers (SSHSIG protocol)
 - Notary checksum model for integrity verification
+- GitHub Release hosting for official packages
 
-See [ADR-007](https://github.com/CognitiveOS-Project/product-specs/blob/main/adr/ADR-007-registry-server-architecture.md) and [ADR-008](https://github.com/CognitiveOS-Project/product-specs/blob/main/adr/ADR-008-hosting-decision.md).
+See [ADR-007](https://github.com/CognitiveOS-Project/product-specs/blob/main/adr/ADR-007-registry-server-architecture.md), [ADR-008](https://github.com/CognitiveOS-Project/product-specs/blob/main/adr/ADR-008-hosting-decision.md), and [ADR-009](https://github.com/CognitiveOS-Project/product-specs/blob/main/adr/ADR-009-machine-identity-profile.md).
+
+## JSON Schemas
+
+Request/response schemas for all endpoints are in [product-specs/schemas/](https://github.com/CognitiveOS-Project/product-specs/tree/main/schemas):
+
+`registry-health-response.json`, `registry-search-response.json`, `registry-package.json`, `registry-package-version.json`, `registry-package-summary.json`, `registry-package-search-result.json`, `registry-publish-request.json`, `registry-publish-response.json`, `registry-versions-response.json`, `registry-dependencies-response.json`, `registry-notary-check-response.json`, `registry-unlock-request.json`, `registry-unlock-response.json`, `registry-auth-status-response.json`, `registry-auth-signup-request.json`, `registry-auth-signup-response.json`, `registry-auth-register-request.json`, `registry-auth-register-response.json`, `registry-status-request.json`, `registry-status-response.json`, `registry-validate-response.json`, `registry-error.json`, `registry-owner-key.json`
 
 ## Related
 
@@ -247,10 +290,11 @@ See [ADR-007](https://github.com/CognitiveOS-Project/product-specs/blob/main/adr
 
 ## Contributing
 
-1. Branch from `main`
-2. Use topic branches: `feature/<name>`, `fix/<name>`
-3. Open a PR to `main` with a clear title and description
-4. Merge after review
+1. Branch from `development`, not `main`
+2. Use topic branches: `feature/<name>`, `fix/<name>`, `bugfix/<name>`
+3. Open a PR to `development` with a clear title and description
+4. Merge via squash after review
+5. Changes flow to `main` via a release PR
 
 See the [SDLC repo](https://github.com/CognitiveOS-Project/sdlc) for the full contribution guide, code review standards, and testing strategy.
 
