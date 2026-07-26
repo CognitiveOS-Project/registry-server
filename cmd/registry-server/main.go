@@ -11,6 +11,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+
 	"github.com/CognitiveOS-Project/registry-server/internal/auth"
 	githubclient "github.com/CognitiveOS-Project/registry-server/internal/github"
 	"github.com/CognitiveOS-Project/registry-server/internal/server"
@@ -81,8 +86,12 @@ func main() {
 
 	var owners auth.OwnerStore
 	if s3Endpoint := os.Getenv("S3_ENDPOINT"); s3Endpoint != "" {
+		s3Client, err := newS3Client(s3Endpoint, os.Getenv("S3_ACCESS_KEY"), os.Getenv("S3_SECRET_KEY"), envOrDefault("S3_REGION", "auto"))
+		if err != nil {
+			log.Fatalf("Failed to create S3 client for owner store: %v", err)
+		}
 		log.Printf("Using S3 owner store")
-		owners = auth.NewS3OwnerStore(nil, envOrDefault("S3_BUCKET", "cognitiveos-registry"), "auth/owners")
+		owners = auth.NewS3OwnerStore(s3Client, envOrDefault("S3_BUCKET", "cognitiveos-registry"), "auth/owners")
 	} else {
 		log.Printf("Using in-memory owner store")
 		owners = auth.NewMemoryOwnerStore()
@@ -155,6 +164,22 @@ func main() {
 	}
 
 	log.Println("Server stopped")
+}
+
+func newS3Client(endpoint, accessKey, secretKey, region string) (*s3.Client, error) {
+	awsCfg, err := config.LoadDefaultConfig(context.Background(),
+		config.WithRegion(region),
+		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(accessKey, secretKey, "")),
+	)
+	if err != nil {
+		return nil, err
+	}
+	return s3.NewFromConfig(awsCfg, func(o *s3.Options) {
+		if endpoint != "" {
+			o.BaseEndpoint = aws.String(endpoint)
+			o.UsePathStyle = true
+		}
+	}), nil
 }
 
 func envOrDefault(key, def string) string {
