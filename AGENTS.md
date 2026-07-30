@@ -31,7 +31,7 @@ The `.cgp` package registry — a Go HTTP server for hosting, searching, version
 ## Storage
 
 - In-memory store (default)
-- File-backed store with `-sqlite` flag
+- File-backed JSON store with `-file` flag
 - S3-compatible store via `S3_*` env vars (Cloudflare R2 default)
 
 ## Middleware

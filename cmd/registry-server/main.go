@@ -25,7 +25,7 @@ import (
 func main() {
 	addr := flag.String("addr", "", "listen address (overrides PORT env)")
 	dataDir := flag.String("data-dir", "", "data directory (overrides DATA_DIR env)")
-	sqlite := flag.Bool("sqlite", false, "use file-backed store (default: memory)")
+	fileStore := flag.Bool("file", false, "use file-backed JSON store (default: memory)")
 	flag.Parse()
 
 	port := envOrDefault("PORT", "8080")
@@ -51,8 +51,8 @@ func main() {
 		if err != nil {
 			log.Fatalf("Failed to create S3 store: %v", err)
 		}
-	} else if *sqlite {
-		log.Printf("Using file-backed store: %s/patches.json", dd)
+	} else if *fileStore {
+		log.Printf("Using file-backed JSON store: %s/patches.json", dd)
 		st = store.NewFileStore(dd + "/patches.json")
 	} else {
 		log.Printf("Using in-memory store")
