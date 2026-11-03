@@ -42,7 +42,7 @@ type OwnerStore interface {
 type MemoryOwnerStore struct {
 	mu     sync.RWMutex
 	owners map[int64]*Owner
-ByKey   map[string]*ownerKeyRef
+	ByKey  map[string]*ownerKeyRef
 }
 
 func NewMemoryOwnerStore() *MemoryOwnerStore {

@@ -12,24 +12,24 @@ import (
 )
 
 type Config struct {
-	Addr       string
-	DataDir    string
-	Store      store.Store
-	TokenAuth  auth.TokenStore
-	SSHKeys    auth.SSHKeyStore
-	Machines   auth.MachineKeyStore
-	Owners     auth.OwnerStore
-	GitHub     *githubclient.Client
-	Session    *SessionMiddleware
-	UI         *UIHandlers
+	Addr      string
+	DataDir   string
+	Store     store.Store
+	TokenAuth auth.TokenStore
+	SSHKeys   auth.SSHKeyStore
+	Machines  auth.MachineKeyStore
+	Owners    auth.OwnerStore
+	GitHub    *githubclient.Client
+	Session   *SessionMiddleware
+	UI        *UIHandlers
 }
 
 type Server struct {
-	config     Config
-	mux        *http.ServeMux
-	rateLimit  *middleware.RateLimiter
-	antiBot    *middleware.AntiBot
-	startedAt  time.Time
+	config    Config
+	mux       *http.ServeMux
+	rateLimit *middleware.RateLimiter
+	antiBot   *middleware.AntiBot
+	startedAt time.Time
 }
 
 func New(config Config) *Server {

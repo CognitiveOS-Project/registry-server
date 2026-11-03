@@ -1154,8 +1154,8 @@ func TestAuthSignup(t *testing.T) {
 			"ram_mb": 8192,
 		},
 		"software": map[string]interface{}{
-			"os":         "linux",
-			"distro":     "CognitiveOS",
+			"os":          "linux",
+			"distro":      "CognitiveOS",
 			"cpm_version": "1.0.0",
 		},
 	}

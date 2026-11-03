@@ -45,9 +45,9 @@ func TestPublishPackage(t *testing.T) {
 		releaseCreated = true
 		w.WriteHeader(201)
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"id":         123,
-			"tag_name":   "v1.0.0",
-			"name":       "hello-world v1.0.0",
+			"id":       123,
+			"tag_name": "v1.0.0",
+			"name":     "hello-world v1.0.0",
 		})
 	})
 

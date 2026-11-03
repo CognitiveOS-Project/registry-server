@@ -17,8 +17,8 @@ type Package struct {
 	License          string            `json:"license,omitempty"`
 	SourceRepository string            `json:"source_repository,omitempty"`
 	SourceIssues     string            `json:"source_issues,omitempty"`
-	DownloadURL      string            `json:"download_url,omitempty"`           // v1 compat (deprecated)
-	DownloadURLs     map[string]string `json:"download_urls,omitempty"`          // v2: variant-keyed URLs
+	DownloadURL      string            `json:"download_url,omitempty"`  // v1 compat (deprecated)
+	DownloadURLs     map[string]string `json:"download_urls,omitempty"` // v2: variant-keyed URLs
 	Size             int64             `json:"size,omitempty"`
 	ChecksumSHA256   string            `json:"checksum_sha256,omitempty"`
 	Status           string            `json:"status,omitempty"`
