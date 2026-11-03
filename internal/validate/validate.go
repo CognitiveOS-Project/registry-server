@@ -13,16 +13,16 @@ import (
 )
 
 type Manifest struct {
-	Name                string              `json:"name"`
-	Version             string              `json:"version"`
-	Description         string              `json:"description,omitempty"`
-	Author              string              `json:"author,omitempty"`
-	License             string              `json:"license,omitempty"`
-	Source              *SourceInfo         `json:"source,omitempty"`
-	Dependencies        map[string]string   `json:"dependencies,omitempty"`
-	HardwareRequirements *HardwareReq       `json:"hardware_requirements,omitempty"`
-	Brain               *BrainConfig        `json:"brain,omitempty"`
-	Runtime             *RuntimeConfig      `json:"runtime,omitempty"`
+	Name                 string            `json:"name"`
+	Version              string            `json:"version"`
+	Description          string            `json:"description,omitempty"`
+	Author               string            `json:"author,omitempty"`
+	License              string            `json:"license,omitempty"`
+	Source               *SourceInfo       `json:"source,omitempty"`
+	Dependencies         map[string]string `json:"dependencies,omitempty"`
+	HardwareRequirements *HardwareReq      `json:"hardware_requirements,omitempty"`
+	Brain                *BrainConfig      `json:"brain,omitempty"`
+	Runtime              *RuntimeConfig    `json:"runtime,omitempty"`
 }
 
 type SourceInfo struct {
@@ -32,9 +32,9 @@ type SourceInfo struct {
 }
 
 type HardwareReq struct {
-	MinRAMMB     int    `json:"min_ram_mb,omitempty"`
-	MinStorageMB int    `json:"min_storage_mb,omitempty"`
-	NPURequired  bool   `json:"npu_required,omitempty"`
+	MinRAMMB     int  `json:"min_ram_mb,omitempty"`
+	MinStorageMB int  `json:"min_storage_mb,omitempty"`
+	NPURequired  bool `json:"npu_required,omitempty"`
 }
 
 type BrainConfig struct {
