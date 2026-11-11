@@ -54,3 +54,12 @@ make clean    # remove build artifacts
 
 - Google Cloud Run (primary, automated via GitHub Actions)
 - Cloudflare R2 for S3-compatible storage
+
+## Process Enforcements (MANDATORY)
+
+All work in this repo MUST follow the CognitiveOS Process Enforcements:
+
+- `product-specs/docs/ENFORCEMENTS.md` — SPECv1, GHW, VibeLeading, ABSEv1
+- `sdlc/docs/ENFORCEMENTS.md` — same content (mirror)
+
+These enforcements are binding on every contributor, agent, and automation. No work may bypass them except on explicit user instruction (maintainer emergency).
