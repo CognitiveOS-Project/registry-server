@@ -19,13 +19,13 @@ import (
 )
 
 type S3Store struct {
-	client     *s3.Client
-	bucket     string
-	prefix     string
-	mu         sync.RWMutex
-	cache      map[string]Package
-	loaded     bool
-	loadedAt   time.Time
+	client   *s3.Client
+	bucket   string
+	prefix   string
+	mu       sync.RWMutex
+	cache    map[string]Package
+	loaded   bool
+	loadedAt time.Time
 }
 
 type S3Config struct {

@@ -116,9 +116,9 @@ func TestE2EFullFlow(t *testing.T) {
 			publishBody := map[string]interface{}{
 				"name": "contacts-bridge", "version": "1.2.0",
 				"description": "Contacts bridge MCP", "author": "tester", "license": "MIT",
-				"sha256": "bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222",
-				"download_urls": map[string]string{"linux/amd64": "https://example.com/contacts-bridge-1.2.0.cgp"},
-				"manifest": map[string]interface{}{"name": "contacts-bridge", "version": "1.2.0", "description": "Contacts bridge MCP"},
+				"sha256":                "bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222",
+				"download_urls":         map[string]string{"linux/amd64": "https://example.com/contacts-bridge-1.2.0.cgp"},
+				"manifest":              map[string]interface{}{"name": "contacts-bridge", "version": "1.2.0", "description": "Contacts bridge MCP"},
 				"hardware_requirements": map[string]interface{}{"min_ram_mb": 256, "min_storage_mb": 100},
 			}
 			code, resp := e2eReq(srv, "POST", "/v1/patches", publishBody, nil)
@@ -132,15 +132,15 @@ func TestE2EFullFlow(t *testing.T) {
 				"name": "hello-world", "version": "1.0.0",
 				"description": "A test hello world", "author": "tester", "license": "MIT",
 				"hardware_requirements": map[string]interface{}{"min_ram_mb": 512},
-				"dependencies":         map[string]interface{}{"contacts-bridge": "^1.0.0"},
+				"dependencies":          map[string]interface{}{"contacts-bridge": "^1.0.0"},
 			}
 
 			publishBody := map[string]interface{}{
 				"name": "hello-world", "version": "1.0.0",
 				"description": "A test hello world package", "author": "tester", "license": "MIT",
-				"sha256": "aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111",
-				"download_urls": map[string]string{"linux/amd64": "https://example.com/hello-world-1.0.0-linux-amd64.cgp"},
-				"manifest": manifest,
+				"sha256":                "aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111",
+				"download_urls":         map[string]string{"linux/amd64": "https://example.com/hello-world-1.0.0-linux-amd64.cgp"},
+				"manifest":              manifest,
 				"hardware_requirements": map[string]interface{}{"min_ram_mb": 512},
 			}
 
@@ -168,7 +168,7 @@ func TestE2EFullFlow(t *testing.T) {
 					"linux/amd64": "https://example.com/email-manager-2.0.0.cgp",
 					"linux/arm64": "https://example.com/email-manager-2.0.0-arm64.cgp",
 				},
-				"manifest": emailManifest,
+				"manifest":              emailManifest,
 				"hardware_requirements": map[string]interface{}{"min_ram_mb": 1024, "min_storage_mb": 500},
 			}
 			code, _ := e2eReq(srv, "POST", "/v1/patches", publishBody, nil)
@@ -277,7 +277,7 @@ func TestE2EFullFlow(t *testing.T) {
 				"name": "hello-world", "version": "1.0.0",
 				"description": "duplicate", "sha256": "dddd",
 				"download_urls": map[string]string{"": "https://example.com/dup.cgp"},
-				"manifest": map[string]interface{}{"name": "hello-world", "version": "1.0.0", "description": "A test hello world package"},
+				"manifest":      map[string]interface{}{"name": "hello-world", "version": "1.0.0", "description": "A test hello world package"},
 			}
 			code, body := e2eReq(srv, "POST", "/v1/patches", publishBody, nil)
 			test("duplicate 409", code == 409)
@@ -332,17 +332,17 @@ func TestE2EMinRAMFilter(t *testing.T) {
 	packages := []map[string]interface{}{
 		{
 			"name": "light-pkg", "version": "1.0.0", "sha256": "aaaa",
-			"download_urls": map[string]string{"": "https://example.com/light.cgp"},
+			"download_urls":         map[string]string{"": "https://example.com/light.cgp"},
 			"hardware_requirements": map[string]interface{}{"min_ram_mb": 256},
 		},
 		{
 			"name": "medium-pkg", "version": "1.0.0", "sha256": "bbbb",
-			"download_urls": map[string]string{"": "https://example.com/medium.cgp"},
+			"download_urls":         map[string]string{"": "https://example.com/medium.cgp"},
 			"hardware_requirements": map[string]interface{}{"min_ram_mb": 1024},
 		},
 		{
 			"name": "heavy-pkg", "version": "1.0.0", "sha256": "cccc",
-			"download_urls": map[string]string{"": "https://example.com/heavy.cgp"},
+			"download_urls":         map[string]string{"": "https://example.com/heavy.cgp"},
 			"hardware_requirements": map[string]interface{}{"min_ram_mb": 4096, "min_storage_mb": 2000},
 		},
 	}
@@ -395,7 +395,7 @@ func TestE2EDependenciesTransitive(t *testing.T) {
 		{
 			"name": "leaf-dep", "version": "1.0.0", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 			"download_urls": map[string]string{"": "https://example.com/leaf.cgp"},
-			"manifest": map[string]interface{}{"name": "leaf-dep", "version": "1.0.0", "description": "leaf dep"},
+			"manifest":      map[string]interface{}{"name": "leaf-dep", "version": "1.0.0", "description": "leaf dep"},
 		},
 		{
 			"name": "mid-dep", "version": "1.0.0", "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
@@ -485,7 +485,7 @@ func TestE2EMultiVariantDownload(t *testing.T) {
 	if w.Code != http.StatusFound {
 		t.Errorf("expected 302 redirect, got %d", w.Code)
 	}
-Location := w.Header().Get("Location")
+	Location := w.Header().Get("Location")
 	if Location != "https://example.com/multi-linux-arm64.cgp" {
 		t.Errorf("wrong redirect URL: %s", Location)
 	}

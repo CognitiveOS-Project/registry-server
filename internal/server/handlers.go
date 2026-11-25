@@ -25,10 +25,10 @@ func (s *Server) handleHealth() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		patchesCount, _ := s.config.Store.List()
 		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"status":        "healthy",
+			"status":         "healthy",
 			"uptime_seconds": int(time.Since(s.startedAt).Seconds()),
-			"patches_count": len(patchesCount),
-			"version":       "2.1.0",
+			"patches_count":  len(patchesCount),
+			"version":        "2.1.0",
 		})
 	}
 }
@@ -70,16 +70,16 @@ func (s *Server) handleSearch() http.HandlerFunc {
 		}
 
 		type searchResult struct {
-			Name                 string         `json:"name"`
-			Version              string         `json:"version"`
-			Description          string         `json:"description"`
-			Author               string         `json:"author,omitempty"`
-			License              string         `json:"license"`
-			SHA256               string         `json:"sha256"`
-			Downloads            int64          `json:"downloads"`
+			Name                 string              `json:"name"`
+			Version              string              `json:"version"`
+			Description          string              `json:"description"`
+			Author               string              `json:"author,omitempty"`
+			License              string              `json:"license"`
+			SHA256               string              `json:"sha256"`
+			Downloads            int64               `json:"downloads"`
 			HardwareRequirements *store.HardwareReqs `json:"hardware_requirements,omitempty"`
-			Capabilities         []string       `json:"capabilities,omitempty"`
-			PublishedAt          string         `json:"published_at,omitempty"`
+			Capabilities         []string            `json:"capabilities,omitempty"`
+			PublishedAt          string              `json:"published_at,omitempty"`
 		}
 		items := make([]searchResult, len(results))
 		for i, r := range results {
@@ -222,19 +222,19 @@ func (s *Server) handleDownload() http.HandlerFunc {
 }
 
 type publishRequest struct {
-	Name             string            `json:"name"`
-	Version          string            `json:"version"`
-	Description      string            `json:"description,omitempty"`
-	Author           string            `json:"author,omitempty"`
-	License          string            `json:"license,omitempty"`
-	SourceRepository string            `json:"source_repository,omitempty"`
-	SourceIssues     string            `json:"source_issues,omitempty"`
-	DownloadURL      string            `json:"download_url,omitempty"`           // v1 compat
-	DownloadURLs     map[string]string `json:"download_urls,omitempty"`          // v2: variant-keyed
-	SHA256           string            `json:"sha256"`
-	Tags             []string          `json:"tags,omitempty"`
-	Capabilities     []string          `json:"capabilities,omitempty"`
-	Manifest         json.RawMessage   `json:"manifest"`
+	Name             string              `json:"name"`
+	Version          string              `json:"version"`
+	Description      string              `json:"description,omitempty"`
+	Author           string              `json:"author,omitempty"`
+	License          string              `json:"license,omitempty"`
+	SourceRepository string              `json:"source_repository,omitempty"`
+	SourceIssues     string              `json:"source_issues,omitempty"`
+	DownloadURL      string              `json:"download_url,omitempty"`  // v1 compat
+	DownloadURLs     map[string]string   `json:"download_urls,omitempty"` // v2: variant-keyed
+	SHA256           string              `json:"sha256"`
+	Tags             []string            `json:"tags,omitempty"`
+	Capabilities     []string            `json:"capabilities,omitempty"`
+	Manifest         json.RawMessage     `json:"manifest"`
 	Hardware         *store.HardwareReqs `json:"hardware_requirements,omitempty"`
 }
 
@@ -879,10 +879,10 @@ func (s *Server) handleAuthRegister() http.HandlerFunc {
 		}
 
 		writeJSON(w, http.StatusCreated, map[string]interface{}{
-			"fingerprint":    info.Fingerprint,
+			"fingerprint":     info.Fingerprint,
 			"public_key_type": info.KeyType,
-			"comment":        info.Comment,
-			"registered_at":  info.Registered.Format(time.RFC3339),
+			"comment":         info.Comment,
+			"registered_at":   info.Registered.Format(time.RFC3339),
 		})
 	}
 }
