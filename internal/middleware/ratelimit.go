@@ -31,9 +31,9 @@ type routeLimiter struct {
 }
 
 type RateLimitConfig struct {
-	Global       rate.Limit
-	GlobalBurst  int
-	Routes       []RouteLimit
+	Global      rate.Limit
+	GlobalBurst int
+	Routes      []RouteLimit
 }
 
 type RouteLimit struct {
@@ -47,12 +47,12 @@ func DefaultRateLimitConfig() RateLimitConfig {
 		Global:      rate.Limit(30.0 / 60), // 30 per minute global per IP
 		GlobalBurst: 30,
 		Routes: []RouteLimit{
-			{Pattern: "search", Rate: 100.0 / 60, Burst: 20},      // Read: 100/min
-			{Pattern: "patches", Rate: 100.0 / 60, Burst: 20},     // Read: 100/min
-			{Pattern: "notary", Rate: 30.0 / 60, Burst: 10},       // Notary: 30/min
-			{Pattern: "unlock", Rate: 5.0 / 60, Burst: 5},         // Unlock: 5/min
-			{Pattern: "auth", Rate: 10.0 / 60, Burst: 5},          // Auth: 10/min
-			{Pattern: "download", Rate: 50.0 / 60, Burst: 15},     // Download: 50/min
+			{Pattern: "search", Rate: 100.0 / 60, Burst: 20},  // Read: 100/min
+			{Pattern: "patches", Rate: 100.0 / 60, Burst: 20}, // Read: 100/min
+			{Pattern: "notary", Rate: 30.0 / 60, Burst: 10},   // Notary: 30/min
+			{Pattern: "unlock", Rate: 5.0 / 60, Burst: 5},     // Unlock: 5/min
+			{Pattern: "auth", Rate: 10.0 / 60, Burst: 5},      // Auth: 10/min
+			{Pattern: "download", Rate: 50.0 / 60, Burst: 15}, // Download: 50/min
 		},
 	}
 }
@@ -143,7 +143,7 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 		rt := rl.matchRoute(r.URL.Path)
 		limiter := rl.getVisitor(key, rt)
 
-		remaining := int(limiter.Tokens()-1)
+		remaining := int(limiter.Tokens() - 1)
 		if remaining < 0 {
 			remaining = 0
 		}

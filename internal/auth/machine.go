@@ -26,13 +26,13 @@ type MachineProfile struct {
 }
 
 type HardwareProfile struct {
-	CPU      string `json:"cpu,omitempty"`
-	Cores    int    `json:"cores,omitempty"`
-	Arch     string `json:"arch,omitempty"`
-	RAMMB    int    `json:"ram_mb,omitempty"`
-	StorageMB int   `json:"storage_mb,omitempty"`
-	GPU      string `json:"gpu,omitempty"`
-	TPM      bool   `json:"tpm,omitempty"`
+	CPU       string `json:"cpu,omitempty"`
+	Cores     int    `json:"cores,omitempty"`
+	Arch      string `json:"arch,omitempty"`
+	RAMMB     int    `json:"ram_mb,omitempty"`
+	StorageMB int    `json:"storage_mb,omitempty"`
+	GPU       string `json:"gpu,omitempty"`
+	TPM       bool   `json:"tpm,omitempty"`
 	MachineID string `json:"machine_id,omitempty"`
 }
 

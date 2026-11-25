@@ -13,9 +13,9 @@ import (
 )
 
 type SessionMiddleware struct {
-	Secret   []byte
-	MaxAge   time.Duration
-	Path     string
+	Secret []byte
+	MaxAge time.Duration
+	Path   string
 }
 
 type Session struct {
@@ -90,7 +90,7 @@ func (s *SessionMiddleware) GetSession(r *http.Request) (*Session, error) {
 		return nil, fmt.Errorf("invalid session signature")
 	}
 
-_fields := strings.Split(value, "|")
+	_fields := strings.Split(value, "|")
 	if len(_fields) != 3 {
 		return nil, fmt.Errorf("invalid session data")
 	}
